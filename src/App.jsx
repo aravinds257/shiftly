@@ -266,8 +266,6 @@ export default function App() {
 
   // Financial Projections
   const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth(); // 0-indexed
 
   // Shifts in the selected date's month
   const getSelectedMonthShifts = () => {
@@ -283,18 +281,48 @@ export default function App() {
   // Total earned for active month
   const monthlyGross = selectedMonthShifts.reduce((sum, s) => sum + calculateShiftPayout(s), 0);
 
-  // Yearly computations
-  const currentYearShifts = shifts.filter(s => new Date(s.date).getFullYear() === currentYear);
-  const yearlyGross = currentYearShifts.reduce((sum, s) => sum + calculateShiftPayout(s), 0);
+  // Tax Year computations (Starts April 6th)
+  const activeDate = new Date(selectedDateStr);
+  const taxYearRange = (() => {
+    const y = activeDate.getFullYear();
+    const taxYearStart = new Date(y, 3, 6); // April 6th
+    if (activeDate >= taxYearStart) {
+      return {
+        start: new Date(y, 3, 6),
+        end: new Date(y + 1, 3, 5),
+        label: `Tax Year ${y}/${(y + 1).toString().slice(-2)}`
+      };
+    } else {
+      return {
+        start: new Date(y - 1, 3, 6),
+        end: new Date(y, 3, 5),
+        label: `Tax Year ${y - 1}/${y.toString().slice(-2)}`
+      };
+    }
+  })();
+
+  const taxYearShifts = shifts.filter(s => {
+    const sDate = new Date(s.date);
+    return sDate >= taxYearRange.start && sDate <= taxYearRange.end;
+  });
+
+  const yearlyGross = taxYearShifts.reduce((sum, s) => sum + calculateShiftPayout(s), 0);
 
   // Annualized Projection logic:
   // (Total earned year-to-date / days elapsed in year) * 365
   const calculateYearlyForecast = () => {
-    if (currentYearShifts.length === 0) return 0;
+    if (taxYearShifts.length === 0) return 0;
     
-    // Find first shift date of this year
-    const startOfYear = new Date(currentYear, 0, 1);
-    const diffTime = Math.abs(now - startOfYear);
+    const startOfTax = taxYearRange.start;
+    const endOfTax = taxYearRange.end;
+    let referenceDate = now;
+    if (now > endOfTax) {
+      referenceDate = endOfTax;
+    } else if (now < startOfTax) {
+      referenceDate = startOfTax;
+    }
+
+    const diffTime = Math.abs(referenceDate - startOfTax);
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
     
     const earnedToDate = yearlyGross;
@@ -302,6 +330,49 @@ export default function App() {
   };
   
   const annualizedForecastGross = calculateYearlyForecast();
+
+  const getMonthlyBreakdown = () => {
+    const startYear = taxYearRange.start.getFullYear();
+    const months = [
+      { name: 'Apr', year: startYear, monthNum: 3 },
+      { name: 'May', year: startYear, monthNum: 4 },
+      { name: 'Jun', year: startYear, monthNum: 5 },
+      { name: 'Jul', year: startYear, monthNum: 6 },
+      { name: 'Aug', year: startYear, monthNum: 7 },
+      { name: 'Sep', year: startYear, monthNum: 8 },
+      { name: 'Oct', year: startYear, monthNum: 9 },
+      { name: 'Nov', year: startYear, monthNum: 10 },
+      { name: 'Dec', year: startYear, monthNum: 11 },
+      { name: 'Jan', year: startYear + 1, monthNum: 0 },
+      { name: 'Feb', year: startYear + 1, monthNum: 1 },
+      { name: 'Mar', year: startYear + 1, monthNum: 2 }
+    ];
+
+    return months.map(m => {
+      // Filter shifts for this month
+      const monthShifts = shifts.filter(s => {
+        const sDate = new Date(s.date);
+        return sDate.getFullYear() === m.year && sDate.getMonth() === m.monthNum;
+      });
+
+      const gross = monthShifts.reduce((sum, s) => sum + calculateShiftPayout(s), 0);
+      
+      // Calculate net
+      let net = gross * (1 - settings.taxPercentage / 100);
+      if (settings.taxMode === 'uk') {
+        const annualGross = annualizedForecastGross || 1;
+        const taxRatio = (yearlyTax + yearlyNI) / annualGross;
+        net = gross * (1 - taxRatio);
+      }
+
+      return {
+        ...m,
+        shiftsCount: monthShifts.length,
+        gross,
+        net
+      };
+    });
+  };
 
   // Calculate Net Values depending on Tax Mode
   let effectiveTaxRate = settings.taxPercentage; // Default simple
@@ -508,10 +579,10 @@ export default function App() {
               <div className="kpi-card glass">
                 <div className="kpi-label">
                   <svg fill="none" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
-                  Yearly Net Earning
+                  Tax Year Net ({taxYearRange.label.replace('Tax Year ', '')})
                 </div>
                 <div className="kpi-value text-primary">{formatCurrency(yearlyNet)}</div>
-                <div className="kpi-subtext">Gross (Overall Pay): {formatCurrency(yearlyGross)}</div>
+                <div className="kpi-subtext">Gross: {formatCurrency(yearlyGross)}</div>
                 {settings.taxMode === 'uk' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px', fontSize: '11px', color: 'var(--text-secondary)', borderTop: '1px solid var(--border-color)', paddingTop: '4px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -527,10 +598,10 @@ export default function App() {
               <div className="kpi-card glass">
                 <div className="kpi-label">
                   <svg fill="none" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 002 2h2a2 2 0 002-2z" /></svg>
-                  Annualized Net Est.
+                  Projected Net Est.
                 </div>
                 <div className="kpi-value text-warning">{formatCurrency(annualizedForecastNet)}</div>
-                <div className="kpi-subtext">Gross (Overall Pay) Est: {formatCurrency(annualizedForecastGross)}</div>
+                <div className="kpi-subtext">Gross Est: {formatCurrency(annualizedForecastGross)}</div>
                 {settings.taxMode === 'uk' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px', fontSize: '11px', color: 'var(--text-secondary)', borderTop: '1px solid var(--border-color)', paddingTop: '4px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -572,6 +643,43 @@ export default function App() {
                     <span className="preset-name">Night Shift</span>
                     <span className="preset-rate">20:00 - 04:00 @ {formatCurrency(settings.defaultNightShiftPay !== undefined ? settings.defaultNightShiftPay : 150)} (Fixed)</span>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Monthly Earnings Breakdown */}
+            <div>
+              <div className="section-title">
+                <span>Monthly Earnings ({taxYearRange.label})</span>
+              </div>
+              <div className="settings-section" style={{ padding: '16px', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 2fr 2fr', gap: '8px', fontSize: '12px', color: 'var(--text-secondary)', fontWeight: '600', paddingBottom: '6px', borderBottom: '1px solid var(--border-color)' }}>
+                  <span>Month</span>
+                  <span style={{ textAlign: 'center' }}>Shifts</span>
+                  <span style={{ textAlign: 'right' }}>Gross</span>
+                  <span style={{ textAlign: 'right' }}>Net Est.</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '250px', overflowY: 'auto', paddingRight: '4px' }}>
+                  {getMonthlyBreakdown().map(m => (
+                    <div 
+                      key={`${m.name}-${m.year}`} 
+                      className="settings-row" 
+                      style={{ 
+                        display: 'grid', 
+                        gridTemplateColumns: '2fr 1fr 2fr 2fr', 
+                        gap: '8px', 
+                        fontSize: '13px', 
+                        padding: '6px 0', 
+                        borderBottom: '1px solid rgba(255,255,255,0.02)',
+                        alignItems: 'center'
+                      }}
+                    >
+                      <span style={{ fontWeight: '500' }}>{m.name} {m.year}</span>
+                      <span style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>{m.shiftsCount}</span>
+                      <span style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>{formatCurrency(m.gross)}</span>
+                      <span style={{ textAlign: 'right', color: 'var(--color-success)', fontWeight: '600' }}>{formatCurrency(m.net)}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
