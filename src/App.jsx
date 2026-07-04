@@ -1,0 +1,937 @@
+import React, { useState, useEffect } from 'react';
+
+// Default Settings
+const INITIAL_SETTINGS = {
+  defaultHourlyRate: 20,
+  defaultBreakMinutes: 30,
+  taxMode: 'simple',
+  taxPercentage: 20,
+  monthlyGoal: 3000,
+  yearlyGoal: 36000
+};
+
+// Initial Sample Data (for demonstration)
+const INITIAL_SHIFTS = [
+  {
+    id: 'sample-1',
+    date: new Date().toISOString().split('T')[0], // Today
+    startTime: '08:00',
+    endTime: '16:00',
+    breakMinutes: 30,
+    hourlyRate: 20,
+    note: 'Standard Day Shift',
+    tag: 'Day'
+  },
+  {
+    id: 'sample-2',
+    date: (() => {
+      const d = new Date();
+      d.setDate(d.getDate() - 1);
+      return d.toISOString().split('T')[0];
+    })(), // Yesterday
+    startTime: '20:00',
+    endTime: '04:00',
+    breakMinutes: 45,
+    hourlyRate: 25,
+    note: 'Night Shift with Overtime',
+    tag: 'Night'
+  }
+];
+
+export default function App() {
+  // Navigation & Tabs
+  const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard' | 'calendar' | 'settings'
+
+  // Application Data States
+  const [shifts, setShifts] = useState(() => {
+    const local = localStorage.getItem('shiftly_shifts');
+    return local ? JSON.parse(local) : INITIAL_SHIFTS;
+  });
+
+  const [settings, setSettings] = useState(() => {
+    const local = localStorage.getItem('shiftly_settings');
+    return local ? JSON.parse(local) : INITIAL_SETTINGS;
+  });
+
+  // Calendar & Drawer States
+  const [currentDate, setCurrentDate] = useState(new Date()); // Holds current viewing month
+  const [selectedDateStr, setSelectedDateStr] = useState(new Date().toISOString().split('T')[0]);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [editingShift, setEditingShift] = useState(null);
+
+  // Form Fields
+  const [startTime, setStartTime] = useState('08:00');
+  const [endTime, setEndTime] = useState('16:00');
+  const [breakMinutes, setBreakMinutes] = useState(30);
+  const [hourlyRate, setHourlyRate] = useState(20);
+  const [note, setNote] = useState('');
+  const [tag, setTag] = useState('Day');
+
+  // Persistence
+  useEffect(() => {
+    localStorage.setItem('shiftly_shifts', JSON.stringify(shifts));
+  }, [shifts]);
+
+  useEffect(() => {
+    localStorage.setItem('shiftly_settings', JSON.stringify(settings));
+  }, [settings]);
+
+  // Sync Form fields when adding/editing
+  const openAddShift = (dateStr) => {
+    setEditingShift(null);
+    setStartTime('08:00');
+    setEndTime('16:00');
+    setBreakMinutes(settings.defaultBreakMinutes);
+    setHourlyRate(settings.defaultHourlyRate);
+    setNote('');
+    setTag('Day');
+    setSelectedDateStr(dateStr);
+    setIsDrawerOpen(true);
+  };
+
+  const openEditShift = (shift) => {
+    setEditingShift(shift);
+    setStartTime(shift.startTime);
+    setEndTime(shift.endTime);
+    setBreakMinutes(shift.breakMinutes);
+    setHourlyRate(shift.hourlyRate);
+    setNote(shift.note || '');
+    setTag(shift.tag || 'Day');
+    setSelectedDateStr(shift.date);
+    setIsDrawerOpen(true);
+  };
+
+  // Duration & Pay Calculations
+  const calculateDurationHours = (start, end, breakMins) => {
+    const [startH, startM] = start.split(':').map(Number);
+    const [endH, endM] = end.split(':').map(Number);
+    
+    let startMinutes = startH * 60 + startM;
+    let endMinutes = endH * 60 + endM;
+    
+    // Overnight shifts (e.g. 22:00 to 06:00)
+    if (endMinutes < startMinutes) {
+      endMinutes += 24 * 60;
+    }
+    
+    const workMinutes = endMinutes - startMinutes - breakMins;
+    return Math.max(0, workMinutes / 60);
+  };
+
+  const calculateShiftPayout = (shift) => {
+    const duration = calculateDurationHours(shift.startTime, shift.endTime, shift.breakMinutes);
+    return duration * shift.hourlyRate;
+  };
+
+  // Action: Save Shift
+  const handleSaveShift = (e) => {
+    e.preventDefault();
+    const shiftData = {
+      id: editingShift ? editingShift.id : 'shift-' + Date.now(),
+      date: selectedDateStr,
+      startTime,
+      endTime,
+      breakMinutes: Number(breakMinutes),
+      hourlyRate: Number(hourlyRate),
+      note,
+      tag
+    };
+
+    if (editingShift) {
+      setShifts(shifts.map(s => s.id === editingShift.id ? shiftData : s));
+    } else {
+      setShifts([...shifts, shiftData]);
+    }
+    setIsDrawerOpen(false);
+  };
+
+  // Action: Delete Shift
+  const handleDeleteShift = (id) => {
+    if (confirm('Are you sure you want to delete this shift?')) {
+      setShifts(shifts.filter(s => s.id !== id));
+      setIsDrawerOpen(false);
+    }
+  };
+
+  // Quick Presets Action
+  const applyPreset = (presetName) => {
+    let pStart = '08:00';
+    let pEnd = '16:00';
+    let pBreak = settings.defaultBreakMinutes;
+    let pRate = settings.defaultHourlyRate;
+    let pTag = 'Day';
+
+    if (presetName === 'Night') {
+      pStart = '20:00';
+      pEnd = '04:00';
+      pBreak = 45;
+      pRate = Math.round(settings.defaultHourlyRate * 1.25);
+      pTag = 'Night';
+    } else if (presetName === 'Late') {
+      pStart = '14:00';
+      pEnd = '22:00';
+      pBreak = 30;
+      pRate = settings.defaultHourlyRate;
+      pTag = 'Late';
+    }
+
+    const newShift = {
+      id: 'shift-' + Date.now(),
+      date: selectedDateStr,
+      startTime: pStart,
+      endTime: pEnd,
+      breakMinutes: pBreak,
+      hourlyRate: pRate,
+      note: `${presetName} Shift Preset`,
+      tag: pTag
+    };
+
+    // Remove any existing shift on this date to replace it, or add it
+    const filtered = shifts.filter(s => s.date !== selectedDateStr);
+    setShifts([...filtered, newShift]);
+  };
+
+  // UK Tax & NI Calculator (Income Tax & Class 1 employee NI)
+  const calculateUKTaxAndNI = (annualGross) => {
+    if (annualGross <= 0) return { incomeTax: 0, ni: 0, totalTax: 0, net: 0, effectiveRate: 0 };
+
+    // 1. Personal Allowance calculation (tapered above £100,000)
+    let personalAllowance = 12570;
+    if (annualGross > 100000) {
+      const reduction = Math.max(0, (annualGross - 100000) / 2);
+      personalAllowance = Math.max(0, personalAllowance - reduction);
+    }
+
+    // 2. Income Tax (2026/2027 bands)
+    let taxableIncome = Math.max(0, annualGross - personalAllowance);
+    let incomeTax = 0;
+
+    if (taxableIncome > 0) {
+      if (annualGross <= 50270) {
+        // Basic rate (20%)
+        incomeTax = taxableIncome * 0.20;
+      } else if (annualGross <= 125140) {
+        // Basic rate up to £50,270 total income, Higher rate (40%) above that
+        const basicRateIncome = Math.max(0, 50270 - personalAllowance);
+        const higherRateIncome = annualGross - 50270;
+        incomeTax = (basicRateIncome * 0.20) + (higherRateIncome * 0.40);
+      } else {
+        // Basic rate + Higher rate + Additional rate (45%)
+        const basicRateIncome = Math.max(0, 50270 - personalAllowance);
+        const higherRateIncome = 125140 - 50270;
+        const additionalRateIncome = annualGross - 125140;
+        incomeTax = (basicRateIncome * 0.20) + (higherRateIncome * 0.40) + (additionalRateIncome * 0.45);
+      }
+    }
+
+    // 3. National Insurance Class 1 (Employee)
+    // 0% up to £12,570; 8% on £12,570 to £50,270; 2% above £50,270
+    let ni = 0;
+    if (annualGross > 12570) {
+      if (annualGross <= 50270) {
+        ni = (annualGross - 12570) * 0.08;
+      } else {
+        const basicNi = (50270 - 12570) * 0.08;
+        const higherNi = (annualGross - 50270) * 0.02;
+        ni = basicNi + higherNi;
+      }
+    }
+
+    const totalTax = incomeTax + ni;
+    const net = annualGross - totalTax;
+    const effectiveRate = (totalTax / annualGross) * 100;
+
+    return { incomeTax, ni, totalTax, net, effectiveRate };
+  };
+
+  // Financial Projections
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth(); // 0-indexed
+
+  // Shifts in the selected date's month
+  const getSelectedMonthShifts = () => {
+    const [year, month] = selectedDateStr.split('-').map(Number);
+    return shifts.filter(s => {
+      const sDate = new Date(s.date);
+      return sDate.getFullYear() === year && sDate.getMonth() === (month - 1);
+    });
+  };
+
+  const selectedMonthShifts = getSelectedMonthShifts();
+
+  // Total earned for active month
+  const monthlyGross = selectedMonthShifts.reduce((sum, s) => sum + calculateShiftPayout(s), 0);
+
+  // Yearly computations
+  const currentYearShifts = shifts.filter(s => new Date(s.date).getFullYear() === currentYear);
+  const yearlyGross = currentYearShifts.reduce((sum, s) => sum + calculateShiftPayout(s), 0);
+
+  // Annualized Projection logic:
+  // (Total earned year-to-date / days elapsed in year) * 365
+  const calculateYearlyForecast = () => {
+    if (currentYearShifts.length === 0) return 0;
+    
+    // Find first shift date of this year
+    const startOfYear = new Date(currentYear, 0, 1);
+    const diffTime = Math.abs(now - startOfYear);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
+    
+    const earnedToDate = yearlyGross;
+    return Math.round((earnedToDate / diffDays) * 365);
+  };
+  
+  const annualizedForecastGross = calculateYearlyForecast();
+
+  // Calculate Net Values depending on Tax Mode
+  let effectiveTaxRate = settings.taxPercentage; // Default simple
+  let monthlyNet = monthlyGross * (1 - effectiveTaxRate / 100);
+  let yearlyNet = yearlyGross * (1 - effectiveTaxRate / 100);
+  let annualizedForecastNet = annualizedForecastGross * (1 - effectiveTaxRate / 100);
+
+  // Detailed tax/NI breakdown declarations
+  let monthlyTax = monthlyGross * (settings.taxPercentage / 100);
+  let monthlyNI = 0;
+  let yearlyTax = yearlyGross * (settings.taxPercentage / 100);
+  let yearlyNI = 0;
+  let annualizedForecastTax = annualizedForecastGross * (settings.taxPercentage / 100);
+  let annualizedForecastNI = 0;
+
+  if (settings.taxMode === 'uk') {
+    // 1. Calculate actual UK Tax & NI on the projected annual gross
+    const ukAnnualized = calculateUKTaxAndNI(annualizedForecastGross);
+    effectiveTaxRate = ukAnnualized.effectiveRate;
+    annualizedForecastNet = ukAnnualized.net;
+    annualizedForecastTax = ukAnnualized.incomeTax;
+    annualizedForecastNI = ukAnnualized.ni;
+
+    // 2. Calculate actual UK Tax & NI on the year-to-date gross (for yearlyNet)
+    const ukYearly = calculateUKTaxAndNI(yearlyGross);
+    yearlyNet = ukYearly.net;
+    yearlyTax = ukYearly.incomeTax;
+    yearlyNI = ukYearly.ni;
+
+    // 3. For monthlyNet, apply the projected effective tax rate (or calculate UK Tax on monthly equivalent)
+    const annualGross = annualizedForecastGross || 1; // avoid division by zero
+    monthlyTax = monthlyGross * (ukAnnualized.incomeTax / annualGross);
+    monthlyNI = monthlyGross * (ukAnnualized.ni / annualGross);
+    monthlyNet = monthlyGross - (monthlyTax + monthlyNI);
+  }
+
+  // Calendar Helpers
+  const getDaysInMonth = (date) => {
+    return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  };
+
+  const getFirstDayOfMonth = (date) => {
+    return new Date(date.getFullYear(), date.getMonth(), 1).getDay();
+  };
+
+  const navigateMonth = (direction) => {
+    const nextDate = new Date(currentDate);
+    nextDate.setMonth(currentDate.getMonth() + direction);
+    setCurrentDate(nextDate);
+  };
+
+  // Build calendar cells
+  const buildCalendarCells = () => {
+    const daysCount = getDaysInMonth(currentDate);
+    const startDay = getFirstDayOfMonth(currentDate);
+    const cells = [];
+
+    // Empty cells for alignment
+    for (let i = 0; i < startDay; i++) {
+      cells.push(<div key={`empty-${i}`} className="calendar-day empty"></div>);
+    }
+
+    // Days in the month
+    for (let day = 1; day <= daysCount; day++) {
+      const year = currentDate.getFullYear();
+      const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+      const dayStr = String(day).padStart(2, '0');
+      const cellDateStr = `${year}-${month}-${dayStr}`;
+
+      const hasShift = shifts.some(s => s.date === cellDateStr);
+      const isSelected = selectedDateStr === cellDateStr;
+      const isToday = new Date().toISOString().split('T')[0] === cellDateStr;
+
+      cells.push(
+        <div
+          key={`day-${day}`}
+          className={`calendar-day ${isSelected ? 'selected' : ''} ${isToday ? 'today' : ''}`}
+          onClick={() => {
+            setSelectedDateStr(cellDateStr);
+            // If there's a shift, open edit. If not, don't open drawer automatically,
+            // let user click "Add Shift" or tap quick presets.
+          }}
+        >
+          {day}
+          {hasShift && <span className="day-shift-dot"></span>}
+        </div>
+      );
+    }
+
+    return cells;
+  };
+
+  // Data Export / Import
+  const handleExportData = () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(
+      JSON.stringify({ shifts, settings }, null, 2)
+    );
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute("href", dataStr);
+    downloadAnchor.setAttribute("download", `shiftly_backup_${new Date().toISOString().split('T')[0]}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+  };
+
+  const handleImportData = (e) => {
+    const fileReader = new FileReader();
+    const file = e.target.files[0];
+    if (!file) return;
+
+    fileReader.onload = (event) => {
+      try {
+        const parsed = JSON.parse(event.target.result);
+        if (parsed.shifts && Array.isArray(parsed.shifts)) {
+          setShifts(parsed.shifts);
+        }
+        if (parsed.settings) {
+          setSettings({ ...settings, ...parsed.settings });
+        }
+        alert('Data successfully imported!');
+      } catch (err) {
+        alert('Invalid backup file structure.');
+      }
+    };
+    fileReader.readAsText(file);
+  };
+
+  // Format Helpers
+  const formatCurrency = (val) => {
+    const isUK = settings.taxMode === 'uk';
+    return new Intl.NumberFormat(isUK ? 'en-GB' : 'en-US', { 
+      style: 'currency', 
+      currency: isUK ? 'GBP' : 'USD' 
+    }).format(val);
+  };
+
+  const formatMonthName = (date) => {
+    return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  };
+
+  // Selected date's shifts
+  const selectedDateShifts = shifts.filter(s => s.date === selectedDateStr);
+
+  return (
+    <>
+      {/* Header */}
+      <header className="app-header">
+        <div className="logo-container">
+          <span className="logo-icon">S</span>
+          <span className="logo-text">Shiftly</span>
+        </div>
+        <button 
+          className="btn btn-secondary" 
+          style={{ padding: '8px 12px', fontSize: '13px', borderRadius: '8px' }}
+          onClick={() => openAddShift(selectedDateStr)}
+        >
+          + Add Shift
+        </button>
+      </header>
+
+      {/* Main Content Area */}
+      <main className="app-content">
+        
+        {/* VIEW 1: DASHBOARD */}
+        {activeTab === 'dashboard' && (
+          <div className="fade-in-slide" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            
+            {/* KPI Overview */}
+            <div className="kpi-grid">
+              
+              <div className="kpi-card glass full-width">
+                <div className="kpi-label">
+                  <svg fill="none" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  Monthly Net Earnings ({new Date(selectedDateStr).toLocaleDateString('en-US', { month: 'short' })})
+                </div>
+                <div className="kpi-value text-success">{formatCurrency(monthlyNet)}</div>
+                <div className="kpi-subtext">
+                  Gross (Overall Pay): {formatCurrency(monthlyGross)} {settings.taxMode === 'uk' ? `(after ~${effectiveTaxRate.toFixed(1)}% est. UK tax & NI)` : `(after ${settings.taxPercentage}% tax)`}
+                </div>
+                {settings.taxMode === 'uk' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '6px', fontSize: '11px', color: 'var(--text-secondary)', borderTop: '1px solid var(--border-color)', paddingTop: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Est. Income Tax:</span>
+                      <span>-{formatCurrency(monthlyTax)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Est. National Insurance:</span>
+                      <span>-{formatCurrency(monthlyNI)}</span>
+                    </div>
+                  </div>
+                )}
+                <div className="progress-container">
+                  <div 
+                    className="progress-bar success" 
+                    style={{ width: `${Math.min(100, (monthlyNet / settings.monthlyGoal) * 100)}%` }}
+                  ></div>
+                </div>
+                <div className="kpi-subtext" style={{ marginTop: '2px', display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Goal Net: {formatCurrency(settings.monthlyGoal)}</span>
+                  <span>{Math.round((monthlyNet / settings.monthlyGoal) * 100)}%</span>
+                </div>
+              </div>
+
+              <div className="kpi-card glass">
+                <div className="kpi-label">
+                  <svg fill="none" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
+                  Yearly Net Earning
+                </div>
+                <div className="kpi-value text-primary">{formatCurrency(yearlyNet)}</div>
+                <div className="kpi-subtext">Gross (Overall Pay): {formatCurrency(yearlyGross)}</div>
+                {settings.taxMode === 'uk' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px', fontSize: '11px', color: 'var(--text-secondary)', borderTop: '1px solid var(--border-color)', paddingTop: '4px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Tax: -{formatCurrency(yearlyTax)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>NI: -{formatCurrency(yearlyNI)}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="kpi-card glass">
+                <div className="kpi-label">
+                  <svg fill="none" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 002 2h2a2 2 0 002-2z" /></svg>
+                  Annualized Net Est.
+                </div>
+                <div className="kpi-value text-warning">{formatCurrency(annualizedForecastNet)}</div>
+                <div className="kpi-subtext">Gross (Overall Pay) Est: {formatCurrency(annualizedForecastGross)}</div>
+                {settings.taxMode === 'uk' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px', fontSize: '11px', color: 'var(--text-secondary)', borderTop: '1px solid var(--border-color)', paddingTop: '4px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Tax: -{formatCurrency(annualizedForecastTax)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>NI: -{formatCurrency(annualizedForecastNI)}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+            </div>
+
+            {/* Presets / Quick Log */}
+            <div>
+              <div className="section-title">
+                <span>Quick Log Preset</span>
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>On {new Date(selectedDateStr).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}</span>
+              </div>
+              <div className="presets-container">
+                <div className="preset-chip glass" onClick={() => applyPreset('Day')}>
+                  <div className="preset-icon">☀️</div>
+                  <div className="preset-info">
+                    <span className="preset-name">Day Shift</span>
+                    <span className="preset-rate">08:00 - 16:00 @ {formatCurrency(settings.defaultHourlyRate)}/h</span>
+                  </div>
+                </div>
+                <div className="preset-chip glass" onClick={() => applyPreset('Late')}>
+                  <div className="preset-icon">🌆</div>
+                  <div className="preset-info">
+                    <span className="preset-name">Late Shift</span>
+                    <span className="preset-rate">14:00 - 22:00 @ {formatCurrency(settings.defaultHourlyRate)}/h</span>
+                  </div>
+                </div>
+                <div className="preset-chip glass" onClick={() => applyPreset('Night')}>
+                  <div className="preset-icon">🌙</div>
+                  <div className="preset-info">
+                    <span className="preset-name">Night Shift</span>
+                    <span className="preset-rate">20:00 - 04:00 @ {formatCurrency(Math.round(settings.defaultHourlyRate * 1.25))}/h</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Selected Date Shifts */}
+            <div>
+              <h3 className="section-title" style={{ marginBottom: '12px' }}>
+                Shifts on {new Date(selectedDateStr).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}
+              </h3>
+              
+              {selectedDateShifts.length === 0 ? (
+                <div className="empty-state">
+                  <svg fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+                  </svg>
+                  <p className="empty-state-text">No shifts logged for this day.</p>
+                  <button className="btn btn-secondary" style={{ padding: '8px 16px', fontSize: '13px' }} onClick={() => openAddShift(selectedDateStr)}>
+                    Add Shift Manual
+                  </button>
+                </div>
+              ) : (
+                <div className="shifts-list-container">
+                  {selectedDateShifts.map(s => (
+                    <div key={s.id} className="shift-card glass" onClick={() => openEditShift(s)}>
+                      <div className="shift-details">
+                        <div className="shift-title-row">
+                          <span className="shift-time">{s.startTime} - {s.endTime}</span>
+                          <span className="shift-tag">{s.tag}</span>
+                        </div>
+                        <span className="shift-sub">
+                          <span>{calculateDurationHours(s.startTime, s.endTime, s.breakMinutes).toFixed(1)} hrs worked</span>
+                          <span>•</span>
+                          <span>Break: {s.breakMinutes}m</span>
+                        </span>
+                        {s.note && <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>"{s.note}"</span>}
+                      </div>
+                      <div className="shift-payout-section">
+                        <span className="shift-pay">{formatCurrency(calculateShiftPayout(s))}</span>
+                        <span className="shift-net-pay">Net: {formatCurrency(calculateShiftPayout(s) * (1 - effectiveTaxRate / 100))}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+          </div>
+        )}
+
+        {/* VIEW 2: CALENDAR */}
+        {activeTab === 'calendar' && (
+          <div className="fade-in-slide" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            
+            {/* Custom Monthly Calendar Card */}
+            <div className="calendar-card glass">
+              <div className="calendar-header">
+                <button className="calendar-nav-btn" onClick={() => navigateMonth(-1)}>←</button>
+                <div className="calendar-title">{formatMonthName(currentDate)}</div>
+                <button className="calendar-nav-btn" onClick={() => navigateMonth(1)}>→</button>
+              </div>
+
+              <div className="calendar-weekdays">
+                <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
+              </div>
+
+              <div className="calendar-grid">
+                {buildCalendarCells()}
+              </div>
+            </div>
+
+            {/* Quick Presets Section inside Calendar tab */}
+            <div>
+              <div className="section-title">
+                <span>Add Preset to Selected Day</span>
+              </div>
+              <div className="presets-container" style={{ paddingBottom: '0' }}>
+                <button className="btn btn-secondary" style={{ padding: '8px 12px', fontSize: '12px' }} onClick={() => applyPreset('Day')}>☀️ Day Shift</button>
+                <button className="btn btn-secondary" style={{ padding: '8px 12px', fontSize: '12px' }} onClick={() => applyPreset('Late')}>🌆 Late Shift</button>
+                <button className="btn btn-secondary" style={{ padding: '8px 12px', fontSize: '12px' }} onClick={() => applyPreset('Night')}>🌙 Night Shift</button>
+              </div>
+            </div>
+
+            {/* Shifts logged for the selected day */}
+            <div>
+              <h3 className="section-title" style={{ marginBottom: '12px' }}>
+                Shifts on {new Date(selectedDateStr).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}
+              </h3>
+              {selectedDateShifts.length === 0 ? (
+                <div className="empty-state">
+                  <p className="empty-state-text">No shifts logged for this day.</p>
+                  <button className="btn btn-secondary" style={{ padding: '8px 16px', fontSize: '13px' }} onClick={() => openAddShift(selectedDateStr)}>
+                    Create Custom Shift
+                  </button>
+                </div>
+              ) : (
+                <div className="shifts-list-container">
+                  {selectedDateShifts.map(s => (
+                    <div key={s.id} className="shift-card glass" onClick={() => openEditShift(s)}>
+                      <div className="shift-details">
+                        <div className="shift-title-row">
+                          <span className="shift-time">{s.startTime} - {s.endTime}</span>
+                          <span className="shift-tag">{s.tag}</span>
+                        </div>
+                        <span className="shift-sub">
+                          <span>{calculateDurationHours(s.startTime, s.endTime, s.breakMinutes).toFixed(1)} hrs worked</span>
+                          <span>•</span>
+                          <span>Break: {s.breakMinutes}m</span>
+                        </span>
+                      </div>
+                      <div className="shift-payout-section">
+                        <span className="shift-pay">{formatCurrency(calculateShiftPayout(s))}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+          </div>
+        )}
+
+        {/* VIEW 3: SETTINGS & BACKUP */}
+        {activeTab === 'settings' && (
+          <div className="fade-in-slide" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            
+            {/* Preferences Setup */}
+            <div className="settings-section">
+              <h3 style={{ fontSize: '16px', fontWeight: 600 }}>Work Profile & Defaults</h3>
+              
+              <div className="form-group">
+                <label className="form-label">Default Hourly Rate ($)</label>
+                <input 
+                  type="number" 
+                  className="input-field" 
+                  value={settings.defaultHourlyRate}
+                  onChange={(e) => setSettings({ ...settings, defaultHourlyRate: Number(e.target.value) })}
+                />
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Default Break (mins)</label>
+                  <input 
+                    type="number" 
+                    className="input-field" 
+                    value={settings.defaultBreakMinutes}
+                    onChange={(e) => setSettings({ ...settings, defaultBreakMinutes: Number(e.target.value) })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Monthly Goal ($)</label>
+                  <input 
+                    type="number" 
+                    className="input-field" 
+                    value={settings.monthlyGoal}
+                    onChange={(e) => setSettings({ ...settings, monthlyGoal: Number(e.target.value) })}
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Tax Calculation Mode</label>
+                <select 
+                  className="input-field" 
+                  value={settings.taxMode || 'simple'}
+                  onChange={(e) => setSettings({ ...settings, taxMode: e.target.value })}
+                >
+                  <option value="simple">Simple Percentage</option>
+                  <option value="uk">UK Income Tax & NI Bands</option>
+                </select>
+              </div>
+
+              {(!settings.taxMode || settings.taxMode === 'simple') ? (
+                <div className="form-group">
+                  <div className="settings-row">
+                    <div className="settings-info">
+                      <span className="settings-title">Tax Estimation Percentage</span>
+                      <span className="settings-description">Subtracted automatically to calculate net pay estimates</span>
+                    </div>
+                  </div>
+                  <div className="slider-container" style={{ marginTop: '8px' }}>
+                    <input 
+                      type="range" 
+                      min="0" 
+                      max="50" 
+                      className="slider-input" 
+                      value={settings.taxPercentage}
+                      onChange={(e) => setSettings({ ...settings, taxPercentage: Number(e.target.value) })}
+                    />
+                    <span className="slider-value">{settings.taxPercentage}%</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="settings-section" style={{ background: 'rgba(255,255,255,0.02)', padding: '12px', border: '1px dashed var(--border-color)', margin: '0' }}>
+                  <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
+                    <strong>UK Tax System Enabled:</strong><br />
+                    • Personal Allowance: £12,570 (0% tax)<br />
+                    • Basic Rate (20%): £12,571 to £50,270<br />
+                    • Higher Rate (40%): £50,271 to £125,140<br />
+                    • Additional Rate (45%): Above £125,140<br />
+                    • Class 1 National Insurance: 8% on £12,570 - £50,270 and 2% above.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Backup & Import */}
+            <div className="settings-section">
+              <h3 style={{ fontSize: '16px', fontWeight: 600 }}>Backup and Data Portability</h3>
+              <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
+                All your shift records are stored locally on your device. Keep a backup file in case you clean your browser cookies.
+              </p>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '4px' }}>
+                <button className="btn btn-secondary btn-full" onClick={handleExportData}>
+                  📥 Export Shifts Backup (JSON)
+                </button>
+                
+                <div style={{ position: 'relative' }}>
+                  <input 
+                    type="file" 
+                    id="import-file" 
+                    accept=".json" 
+                    style={{ display: 'none' }} 
+                    onChange={handleImportData}
+                  />
+                  <label htmlFor="import-file" className="btn btn-secondary btn-full" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    📤 Import Shifts Backup (JSON)
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Info Section */}
+            <div style={{ textAlign: 'center', padding: '10px 0', color: 'var(--text-muted)', fontSize: '12px' }}>
+              <p>Shiftly v1.0.0 • Private & Offline-first</p>
+            </div>
+
+          </div>
+        )}
+
+      </main>
+
+      {/* Slide-up Editor Drawer */}
+      <div className={`drawer-overlay ${isDrawerOpen ? 'active' : ''}`} onClick={() => setIsDrawerOpen(false)}>
+        <div className="drawer-content" onClick={(e) => e.stopPropagation()}>
+          <div className="drawer-header">
+            <h3 className="drawer-title">{editingShift ? 'Edit Shift Details' : 'Add New Shift'}</h3>
+            <button className="drawer-close" onClick={() => setIsDrawerOpen(false)}>✕</button>
+          </div>
+
+          <form onSubmit={handleSaveShift}>
+            <div className="form-group">
+              <label className="form-label">Shift Tag / Name</label>
+              <select className="input-field" value={tag} onChange={(e) => setTag(e.target.value)}>
+                <option value="Day">☀️ Day Shift</option>
+                <option value="Late">🌆 Late Shift</option>
+                <option value="Night">🌙 Night Shift</option>
+                <option value="Custom">⚙️ Custom Shift</option>
+              </select>
+            </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Start Time</label>
+                <input 
+                  type="time" 
+                  className="input-field" 
+                  value={startTime} 
+                  required
+                  onChange={(e) => setStartTime(e.target.value)} 
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">End Time</label>
+                <input 
+                  type="time" 
+                  className="input-field" 
+                  value={endTime} 
+                  required
+                  onChange={(e) => setEndTime(e.target.value)} 
+                />
+              </div>
+            </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Unpaid Break (mins)</label>
+                <input 
+                  type="number" 
+                  className="input-field" 
+                  value={breakMinutes} 
+                  required
+                  onChange={(e) => setBreakMinutes(e.target.value)} 
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Hourly Rate ($)</label>
+                <input 
+                  type="number" 
+                  step="0.01" 
+                  className="input-field" 
+                  value={hourlyRate} 
+                  required
+                  onChange={(e) => setHourlyRate(e.target.value)} 
+                />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Notes (Optional)</label>
+              <input 
+                type="text" 
+                className="input-field" 
+                placeholder="e.g. Overtime pay applied" 
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+              />
+            </div>
+
+            <div style={{ marginTop: '8px' }}>
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                Calculated Duration: <strong>{calculateDurationHours(startTime, endTime, Number(breakMinutes)).toFixed(2)} hours</strong>
+              </p>
+              <p style={{ fontSize: '13px', color: 'var(--color-success)', marginTop: '4px' }}>
+                Est. Payout: <strong>{formatCurrency(calculateDurationHours(startTime, endTime, Number(breakMinutes)) * Number(hourlyRate))}</strong>
+              </p>
+            </div>
+
+            <div className="actions-row">
+              <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
+                Save Shift
+              </button>
+              {editingShift && (
+                <button 
+                  type="button" 
+                  className="btn btn-danger" 
+                  onClick={() => handleDeleteShift(editingShift.id)}
+                >
+                  Delete
+                </button>
+              )}
+            </div>
+          </form>
+        </div>
+      </div>
+
+      {/* Bottom Navigation Bar */}
+      <nav className="bottom-nav">
+        <button 
+          className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
+          onClick={() => setActiveTab('dashboard')}
+        >
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2H6a2 2 0 01-2-2v-4zM14 16a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2h-2a2 2 0 01-2-2v-4z" />
+          </svg>
+          Dashboard
+        </button>
+
+        <button 
+          className={`nav-item ${activeTab === 'calendar' ? 'active' : ''}`}
+          onClick={() => setActiveTab('calendar')}
+        >
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          Calendar
+        </button>
+
+        <button 
+          className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`}
+          onClick={() => setActiveTab('settings')}
+        >
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          Settings
+        </button>
+      </nav>
+    </>
+  );
+}
