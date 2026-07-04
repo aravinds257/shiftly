@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 // Default Settings
 const INITIAL_SETTINGS = {
   defaultHourlyRate: 20,
+  defaultNightShiftPay: 150,
   defaultBreakMinutes: 30,
   taxMode: 'simple',
   taxPercentage: 20,
@@ -53,6 +54,8 @@ export default function App() {
     return local ? JSON.parse(local) : INITIAL_SETTINGS;
   });
 
+  const currencySymbol = settings.taxMode === 'uk' ? '£' : '$';
+
   // Calendar & Drawer States
   const [currentDate, setCurrentDate] = useState(new Date()); // Holds current viewing month
   const [selectedDateStr, setSelectedDateStr] = useState(new Date().toISOString().split('T')[0]);
@@ -64,6 +67,8 @@ export default function App() {
   const [endTime, setEndTime] = useState('16:00');
   const [breakMinutes, setBreakMinutes] = useState(30);
   const [hourlyRate, setHourlyRate] = useState(20);
+  const [isFixedPay, setIsFixedPay] = useState(false);
+  const [fixedPay, setFixedPay] = useState(150);
   const [note, setNote] = useState('');
   const [tag, setTag] = useState('Day');
 
@@ -83,6 +88,8 @@ export default function App() {
     setEndTime('16:00');
     setBreakMinutes(settings.defaultBreakMinutes);
     setHourlyRate(settings.defaultHourlyRate);
+    setIsFixedPay(false);
+    setFixedPay(settings.defaultNightShiftPay !== undefined ? settings.defaultNightShiftPay : 150);
     setNote('');
     setTag('Day');
     setSelectedDateStr(dateStr);
@@ -94,7 +101,9 @@ export default function App() {
     setStartTime(shift.startTime);
     setEndTime(shift.endTime);
     setBreakMinutes(shift.breakMinutes);
-    setHourlyRate(shift.hourlyRate);
+    setHourlyRate(shift.hourlyRate || 0);
+    setIsFixedPay(!!shift.isFixedPay);
+    setFixedPay(shift.fixedPay || (settings.defaultNightShiftPay !== undefined ? settings.defaultNightShiftPay : 150));
     setNote(shift.note || '');
     setTag(shift.tag || 'Day');
     setSelectedDateStr(shift.date);
@@ -119,8 +128,11 @@ export default function App() {
   };
 
   const calculateShiftPayout = (shift) => {
+    if (shift.isFixedPay) {
+      return shift.fixedPay || 0;
+    }
     const duration = calculateDurationHours(shift.startTime, shift.endTime, shift.breakMinutes);
-    return duration * shift.hourlyRate;
+    return duration * (shift.hourlyRate || 0);
   };
 
   // Action: Save Shift
@@ -132,7 +144,9 @@ export default function App() {
       startTime,
       endTime,
       breakMinutes: Number(breakMinutes),
-      hourlyRate: Number(hourlyRate),
+      hourlyRate: isFixedPay ? 0 : Number(hourlyRate),
+      isFixedPay,
+      fixedPay: isFixedPay ? Number(fixedPay) : 0,
       note,
       tag
     };
@@ -160,12 +174,16 @@ export default function App() {
     let pBreak = settings.defaultBreakMinutes;
     let pRate = settings.defaultHourlyRate;
     let pTag = 'Day';
+    let pIsFixed = false;
+    let pFixedPay = 0;
 
     if (presetName === 'Night') {
       pStart = '20:00';
       pEnd = '04:00';
       pBreak = 45;
-      pRate = Math.round(settings.defaultHourlyRate * 1.25);
+      pRate = 0;
+      pIsFixed = true;
+      pFixedPay = settings.defaultNightShiftPay !== undefined ? settings.defaultNightShiftPay : 150;
       pTag = 'Night';
     } else if (presetName === 'Late') {
       pStart = '14:00';
@@ -182,6 +200,8 @@ export default function App() {
       endTime: pEnd,
       breakMinutes: pBreak,
       hourlyRate: pRate,
+      isFixedPay: pIsFixed,
+      fixedPay: pFixedPay,
       note: `${presetName} Shift Preset`,
       tag: pTag
     };
@@ -550,7 +570,7 @@ export default function App() {
                   <div className="preset-icon">🌙</div>
                   <div className="preset-info">
                     <span className="preset-name">Night Shift</span>
-                    <span className="preset-rate">20:00 - 04:00 @ {formatCurrency(Math.round(settings.defaultHourlyRate * 1.25))}/h</span>
+                    <span className="preset-rate">20:00 - 04:00 @ {formatCurrency(settings.defaultNightShiftPay !== undefined ? settings.defaultNightShiftPay : 150)} (Fixed)</span>
                   </div>
                 </div>
               </div>
@@ -681,14 +701,25 @@ export default function App() {
             <div className="settings-section">
               <h3 style={{ fontSize: '16px', fontWeight: 600 }}>Work Profile & Defaults</h3>
               
-              <div className="form-group">
-                <label className="form-label">Default Hourly Rate ($)</label>
-                <input 
-                  type="number" 
-                  className="input-field" 
-                  value={settings.defaultHourlyRate}
-                  onChange={(e) => setSettings({ ...settings, defaultHourlyRate: Number(e.target.value) })}
-                />
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Default Hourly Rate ({currencySymbol})</label>
+                  <input 
+                    type="number" 
+                    className="input-field" 
+                    value={settings.defaultHourlyRate}
+                    onChange={(e) => setSettings({ ...settings, defaultHourlyRate: Number(e.target.value) })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Default Night Shift Pay (Fixed, {currencySymbol})</label>
+                  <input 
+                    type="number" 
+                    className="input-field" 
+                    value={settings.defaultNightShiftPay !== undefined ? settings.defaultNightShiftPay : 150}
+                    onChange={(e) => setSettings({ ...settings, defaultNightShiftPay: Number(e.target.value) })}
+                  />
+                </div>
               </div>
 
               <div className="form-row">
@@ -806,7 +837,19 @@ export default function App() {
           <form onSubmit={handleSaveShift}>
             <div className="form-group">
               <label className="form-label">Shift Tag / Name</label>
-              <select className="input-field" value={tag} onChange={(e) => setTag(e.target.value)}>
+              <select 
+                className="input-field" 
+                value={tag} 
+                onChange={(e) => {
+                  const newTag = e.target.value;
+                  setTag(newTag);
+                  if (newTag === 'Night') {
+                    setIsFixedPay(true);
+                  } else if (newTag === 'Day' || newTag === 'Late') {
+                    setIsFixedPay(false);
+                  }
+                }}
+              >
                 <option value="Day">☀️ Day Shift</option>
                 <option value="Late">🌆 Late Shift</option>
                 <option value="Night">🌙 Night Shift</option>
@@ -849,16 +892,40 @@ export default function App() {
                 />
               </div>
               <div className="form-group">
-                <label className="form-label">Hourly Rate ($)</label>
-                <input 
-                  type="number" 
-                  step="0.01" 
-                  className="input-field" 
-                  value={hourlyRate} 
-                  required
-                  onChange={(e) => setHourlyRate(e.target.value)} 
-                />
+                <label className="form-label">{isFixedPay ? `Fixed Pay (${currencySymbol})` : `Hourly Rate (${currencySymbol})`}</label>
+                {isFixedPay ? (
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    className="input-field" 
+                    value={fixedPay} 
+                    required
+                    onChange={(e) => setFixedPay(e.target.value)} 
+                  />
+                ) : (
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    className="input-field" 
+                    value={hourlyRate} 
+                    required
+                    onChange={(e) => setHourlyRate(e.target.value)} 
+                  />
+                )}
               </div>
+            </div>
+
+            <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '8px', marginTop: '-8px', marginBottom: '16px' }}>
+              <input 
+                type="checkbox" 
+                id="isFixedPay"
+                checked={isFixedPay}
+                onChange={(e) => setIsFixedPay(e.target.checked)}
+                style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+              />
+              <label htmlFor="isFixedPay" className="form-label" style={{ cursor: 'pointer', margin: 0 }}>
+                This is a fixed pay shift
+              </label>
             </div>
 
             <div className="form-group">
@@ -877,7 +944,7 @@ export default function App() {
                 Calculated Duration: <strong>{calculateDurationHours(startTime, endTime, Number(breakMinutes)).toFixed(2)} hours</strong>
               </p>
               <p style={{ fontSize: '13px', color: 'var(--color-success)', marginTop: '4px' }}>
-                Est. Payout: <strong>{formatCurrency(calculateDurationHours(startTime, endTime, Number(breakMinutes)) * Number(hourlyRate))}</strong>
+                Est. Payout: <strong>{formatCurrency(isFixedPay ? Number(fixedPay) : calculateDurationHours(startTime, endTime, Number(breakMinutes)) * Number(hourlyRate))}</strong>
               </p>
             </div>
 
