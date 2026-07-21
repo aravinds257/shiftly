@@ -495,8 +495,8 @@ button, input, select, textarea {
   position: fixed;
   top: 0;
   left: 0;
-  width: 100vw;
-  height: 100vh;
+  right: 0;
+  bottom: 0;
   background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(4px);
   z-index: 100;
@@ -521,6 +521,7 @@ button, input, select, textarea {
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   padding: 24px 24px 0 24px;
   max-height: 85vh;
+  max-height: 85dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
