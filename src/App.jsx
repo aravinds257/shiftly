@@ -81,6 +81,43 @@ export default function App() {
     localStorage.setItem('shiftly_settings', JSON.stringify(settings));
   }, [settings]);
 
+  // PWA states and logic
+  const [isStandalone, setIsStandalone] = useState(() => {
+    return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+  });
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [isIOS] = useState(() => /iPhone|iPad|iPod/i.test(navigator.userAgent));
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    const mediaQuery = window.matchMedia('(display-mode: standalone)');
+    const handleStandaloneChange = (e) => {
+      setIsStandalone(e.matches);
+    };
+    mediaQuery.addEventListener('change', handleStandaloneChange);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      mediaQuery.removeEventListener('change', handleStandaloneChange);
+    };
+  }, []);
+
+  const handleInstallPWA = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    console.log(`PWA installation choice: ${outcome}`);
+    if (outcome === 'accepted') {
+      setInstallPrompt(null);
+    }
+  };
+
   // Sync Form fields when adding/editing
   const openAddShift = (dateStr) => {
     setEditingShift(null);
@@ -896,6 +933,31 @@ export default function App() {
                 </div>
               )}
             </div>
+
+            {/* App Shortcut (PWA Installation) */}
+            {!isStandalone && (
+              <div className="settings-section">
+                <h3 style={{ fontSize: '16px', fontWeight: 600 }}>App Shortcut</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
+                  Install Shiftly to your device's home screen for quick, offline-ready access just like a native app.
+                </p>
+                {installPrompt ? (
+                  <button className="btn btn-primary btn-full" onClick={handleInstallPWA} style={{ marginTop: '8px' }}>
+                    📱 Add Shortcut / Install App
+                  </button>
+                ) : isIOS ? (
+                  <div style={{ background: 'rgba(99, 102, 241, 0.05)', padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(99, 102, 241, 0.2)', fontSize: '12px', color: 'var(--text-primary)', marginTop: '8px', lineHeight: '1.5' }}>
+                    <strong>iOS / iPhone Setup:</strong><br />
+                    1. Tap the <strong>Share</strong> icon <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ width: '16px', height: '16px', display: 'inline', verticalAlign: 'middle', margin: '0 2px' }}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg> in Safari's bottom toolbar.<br />
+                    2. Scroll down and select <strong>Add to Home Screen</strong> from the menu.
+                  </div>
+                ) : (
+                  <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '12px', color: 'var(--text-secondary)', marginTop: '8px', lineHeight: '1.5' }}>
+                    To add this app to your home screen: click your browser's menu button (usually three dots <span style={{ fontWeight: 'bold' }}>⋮</span> or sharing icon) and select <strong>Add to Home Screen</strong> or <strong>Install App</strong>.
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Backup & Import */}
             <div className="settings-section">
