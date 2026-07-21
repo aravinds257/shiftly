@@ -521,19 +521,11 @@ button, input, select, textarea {
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   padding: 24px 24px 0 24px;
   max-height: 85vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   transform: translateY(100%);
   transition: transform var(--transition-normal);
   box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.5);
-}
-
-.drawer-body {
-  flex: 1;
-  overflow-y: auto;
-  padding-bottom: 24px;
-  -webkit-overflow-scrolling: touch;
 }
 
 .drawer-overlay.active .drawer-content {
@@ -660,6 +652,8 @@ button, input, select, textarea {
 }
 
 .actions-row {
+  position: sticky;
+  bottom: 0;
   display: flex;
   gap: 12px;
   margin-top: 0;
