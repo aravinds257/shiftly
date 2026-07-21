@@ -942,118 +942,120 @@ export default function App() {
             <button className="drawer-close" onClick={() => setIsDrawerOpen(false)}>✕</button>
           </div>
 
-          <form onSubmit={handleSaveShift}>
-            <div className="form-group">
-              <label className="form-label">Shift Tag / Name</label>
-              <select 
-                className="input-field" 
-                value={tag} 
-                onChange={(e) => {
-                  const newTag = e.target.value;
-                  setTag(newTag);
-                  if (newTag === 'Night') {
-                    setIsFixedPay(true);
-                  } else if (newTag === 'Day' || newTag === 'Late') {
-                    setIsFixedPay(false);
-                  }
-                }}
-              >
-                <option value="Day">☀️ Day Shift</option>
-                <option value="Late">🌆 Late Shift</option>
-                <option value="Night">🌙 Night Shift</option>
-                <option value="Custom">⚙️ Custom Shift</option>
-              </select>
-            </div>
+          <form onSubmit={handleSaveShift} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+            <div className="drawer-body">
+              <div className="form-group">
+                <label className="form-label">Shift Tag / Name</label>
+                <select 
+                  className="input-field" 
+                  value={tag} 
+                  onChange={(e) => {
+                    const newTag = e.target.value;
+                    setTag(newTag);
+                    if (newTag === 'Night') {
+                      setIsFixedPay(true);
+                    } else if (newTag === 'Day' || newTag === 'Late') {
+                      setIsFixedPay(false);
+                    }
+                  }}
+                >
+                  <option value="Day">☀️ Day Shift</option>
+                  <option value="Late">🌆 Late Shift</option>
+                  <option value="Night">🌙 Night Shift</option>
+                  <option value="Custom">⚙️ Custom Shift</option>
+                </select>
+              </div>
 
-            <div className="form-row">
-              <div className="form-group">
-                <label className="form-label">Start Time</label>
-                <input 
-                  type="time" 
-                  className="input-field" 
-                  value={startTime} 
-                  required
-                  onChange={(e) => setStartTime(e.target.value)} 
-                />
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Start Time</label>
+                  <input 
+                    type="time" 
+                    className="input-field" 
+                    value={startTime} 
+                    required
+                    onChange={(e) => setStartTime(e.target.value)} 
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">End Time</label>
+                  <input 
+                    type="time" 
+                    className="input-field" 
+                    value={endTime} 
+                    required
+                    onChange={(e) => setEndTime(e.target.value)} 
+                  />
+                </div>
               </div>
-              <div className="form-group">
-                <label className="form-label">End Time</label>
-                <input 
-                  type="time" 
-                  className="input-field" 
-                  value={endTime} 
-                  required
-                  onChange={(e) => setEndTime(e.target.value)} 
-                />
-              </div>
-            </div>
 
-            <div className="form-row">
-              <div className="form-group">
-                <label className="form-label">Unpaid Break (mins)</label>
-                <input 
-                  type="number" 
-                  className="input-field" 
-                  value={breakMinutes} 
-                  required
-                  onChange={(e) => setBreakMinutes(e.target.value)} 
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">{isFixedPay ? `Fixed Pay (${currencySymbol})` : `Hourly Rate (${currencySymbol})`}</label>
-                {isFixedPay ? (
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Unpaid Break (mins)</label>
                   <input 
                     type="number" 
-                    step="0.01" 
                     className="input-field" 
-                    value={fixedPay} 
+                    value={breakMinutes} 
                     required
-                    onChange={(e) => setFixedPay(e.target.value)} 
+                    onChange={(e) => setBreakMinutes(e.target.value)} 
                   />
-                ) : (
-                  <input 
-                    type="number" 
-                    step="0.01" 
-                    className="input-field" 
-                    value={hourlyRate} 
-                    required
-                    onChange={(e) => setHourlyRate(e.target.value)} 
-                  />
-                )}
+                </div>
+                <div className="form-group">
+                  <label className="form-label">{isFixedPay ? `Fixed Pay (${currencySymbol})` : `Hourly Rate (${currencySymbol})`}</label>
+                  {isFixedPay ? (
+                    <input 
+                      type="number" 
+                      step="0.01" 
+                      className="input-field" 
+                      value={fixedPay} 
+                      required
+                      onChange={(e) => setFixedPay(e.target.value)} 
+                    />
+                  ) : (
+                    <input 
+                      type="number" 
+                      step="0.01" 
+                      className="input-field" 
+                      value={hourlyRate} 
+                      required
+                      onChange={(e) => setHourlyRate(e.target.value)} 
+                    />
+                  )}
+                </div>
               </div>
-            </div>
 
-            <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '8px', marginTop: '-8px', marginBottom: '16px' }}>
-              <input 
-                type="checkbox" 
-                id="isFixedPay"
-                checked={isFixedPay}
-                onChange={(e) => setIsFixedPay(e.target.checked)}
-                style={{ width: '16px', height: '16px', cursor: 'pointer' }}
-              />
-              <label htmlFor="isFixedPay" className="form-label" style={{ cursor: 'pointer', margin: 0 }}>
-                This is a fixed pay shift
-              </label>
-            </div>
+              <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '8px', marginTop: '-8px', marginBottom: '16px' }}>
+                <input 
+                  type="checkbox" 
+                  id="isFixedPay"
+                  checked={isFixedPay}
+                  onChange={(e) => setIsFixedPay(e.target.checked)}
+                  style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                />
+                <label htmlFor="isFixedPay" className="form-label" style={{ cursor: 'pointer', margin: 0 }}>
+                  This is a fixed pay shift
+                </label>
+              </div>
 
-            <div className="form-group">
-              <label className="form-label">Notes (Optional)</label>
-              <input 
-                type="text" 
-                className="input-field" 
-                placeholder="e.g. Overtime pay applied" 
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-              />
-            </div>
+              <div className="form-group">
+                <label className="form-label">Notes (Optional)</label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  placeholder="e.g. Overtime pay applied" 
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                />
+              </div>
 
-            <div style={{ marginTop: '8px' }}>
-              <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-                Calculated Duration: <strong>{calculateDurationHours(startTime, endTime, Number(breakMinutes)).toFixed(2)} hours</strong>
-              </p>
-              <p style={{ fontSize: '13px', color: 'var(--color-success)', marginTop: '4px' }}>
-                Est. Payout: <strong>{formatCurrency(isFixedPay ? Number(fixedPay) : calculateDurationHours(startTime, endTime, Number(breakMinutes)) * Number(hourlyRate))}</strong>
-              </p>
+              <div style={{ marginTop: '8px' }}>
+                <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                  Calculated Duration: <strong>{calculateDurationHours(startTime, endTime, Number(breakMinutes)).toFixed(2)} hours</strong>
+                </p>
+                <p style={{ fontSize: '13px', color: 'var(--color-success)', marginTop: '4px' }}>
+                  Est. Payout: <strong>{formatCurrency(isFixedPay ? Number(fixedPay) : calculateDurationHours(startTime, endTime, Number(breakMinutes)) * Number(hourlyRate))}</strong>
+                </p>
+              </div>
             </div>
 
             <div className="actions-row">
