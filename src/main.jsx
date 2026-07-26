@@ -6,7 +6,7 @@ import App from './App.jsx'
 // Register Service Worker for PWA support
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/shiftly/sw.js')
+    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`)
       .then(reg => console.log('Service Worker registered', reg))
       .catch(err => console.error('Service Worker registration failed', err));
   });

@@ -2,7 +2,7 @@
   "name": "Shiftly - Personal Shift Tracker",
   "short_name": "Shiftly",
   "description": "Track your daily shifts, view calendars, and forecast monthly and yearly earnings with Shiftly.",
-  "start_url": "/shiftly/",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#0a0b16",
   "theme_color": "#6366f1",
