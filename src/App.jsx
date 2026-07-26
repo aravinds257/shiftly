@@ -529,6 +529,62 @@ export default function App() {
     annualizedForecastNet = ukForecastMonthly.net * 12;
   }
 
+  // Selected Month Hours & Shift Type Breakdown (Day vs Night Fixed)
+  const selectedMonthHours = selectedMonthShifts.reduce((sum, s) => {
+    return sum + calculateDurationHours(s.startTime, s.endTime, s.breakMinutes);
+  }, 0);
+
+  const selectedMonthDayShifts = selectedMonthShifts.filter(s => !s.isFixedPay && s.tag !== 'Night');
+  const selectedMonthNightShifts = selectedMonthShifts.filter(s => s.isFixedPay || s.tag === 'Night');
+
+  const selectedMonthDayGross = selectedMonthDayShifts.reduce((sum, s) => sum + calculateShiftPayout(s), 0);
+  const selectedMonthNightGross = selectedMonthNightShifts.reduce((sum, s) => sum + calculateShiftPayout(s), 0);
+
+  const getWeeklyShiftBreakdown = () => {
+    const [year, month] = selectedDateStr.split('-').map(Number);
+    const daysInMonth = new Date(year, month, 0).getDate();
+
+    const weeks = [
+      { label: 'Week 1', startDay: 1, endDay: 7 },
+      { label: 'Week 2', startDay: 8, endDay: 14 },
+      { label: 'Week 3', startDay: 15, endDay: 21 },
+      { label: 'Week 4+', startDay: 22, endDay: daysInMonth }
+    ];
+
+    return weeks.map(w => {
+      const wShifts = selectedMonthShifts.filter(s => {
+        const d = new Date(s.date).getDate();
+        return d >= w.startDay && d <= w.endDay;
+      });
+
+      const hours = wShifts.reduce((sum, s) => sum + calculateDurationHours(s.startTime, s.endTime, s.breakMinutes), 0);
+      const dayShifts = wShifts.filter(s => !s.isFixedPay && s.tag !== 'Night');
+      const nightShifts = wShifts.filter(s => s.isFixedPay || s.tag === 'Night');
+
+      const dayGross = dayShifts.reduce((sum, s) => sum + calculateShiftPayout(s), 0);
+      const nightGross = nightShifts.reduce((sum, s) => sum + calculateShiftPayout(s), 0);
+      const totalGross = dayGross + nightGross;
+
+      const taxRatio = effectiveTaxRate / 100;
+      const net = totalGross * (1 - taxRatio);
+
+      return {
+        ...w,
+        shiftsCount: wShifts.length,
+        hours,
+        dayCount: dayShifts.length,
+        nightCount: nightShifts.length,
+        dayGross,
+        nightGross,
+        totalGross,
+        net
+      };
+    });
+  };
+
+  const weeklyBreakdown = getWeeklyShiftBreakdown();
+  const maxWeeklyGross = Math.max(...weeklyBreakdown.map(w => w.totalGross), 1);
+
   // Calendar Helpers
   const getDaysInMonth = (date) => {
     return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
@@ -664,14 +720,35 @@ export default function App() {
             <div className="kpi-grid">
               
               <div className="kpi-card glass full-width">
-                <div className="kpi-label">
-                  <svg fill="none" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                  Monthly Net Earnings ({new Date(selectedDateStr).toLocaleDateString('en-US', { month: 'short' })})
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
+                  <div>
+                    <div className="kpi-label">
+                      <svg style={{ width: '16px', height: '16px', flexShrink: 0, stroke: 'currentColor' }} fill="none" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                      Monthly Net Earnings ({new Date(selectedDateStr).toLocaleDateString('en-US', { month: 'short' })})
+                    </div>
+                    <div className="kpi-value text-success">{formatCurrency(monthlyNet)}</div>
+                    <div className="kpi-subtext">
+                      Gross (Overall Pay): {formatCurrency(monthlyGross)} {settings.taxMode === 'uk' ? `(after ~${effectiveTaxRate.toFixed(1)}% est. UK tax & NI)` : `(after ${settings.taxPercentage}% tax)`}
+                    </div>
+                  </div>
+
+                  {/* Monthly Summary Badges */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+                    <div className="kpi-stat-badge">
+                      <span style={{ fontSize: '12px' }}>⏱️</span>
+                      <span><strong>{selectedMonthHours.toFixed(1)}</strong> hrs</span>
+                    </div>
+                    <div className="kpi-stat-badge day-badge">
+                      <span style={{ fontSize: '12px' }}>☀️</span>
+                      <span><strong>{selectedMonthDayShifts.length}</strong> Day ({formatCurrency(selectedMonthDayGross)})</span>
+                    </div>
+                    <div className="kpi-stat-badge night-badge">
+                      <span style={{ fontSize: '12px' }}>🌙</span>
+                      <span><strong>{selectedMonthNightShifts.length}</strong> Night ({formatCurrency(selectedMonthNightGross)})</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="kpi-value text-success">{formatCurrency(monthlyNet)}</div>
-                <div className="kpi-subtext">
-                  Gross (Overall Pay): {formatCurrency(monthlyGross)} {settings.taxMode === 'uk' ? `(after ~${effectiveTaxRate.toFixed(1)}% est. UK tax & NI)` : `(after ${settings.taxPercentage}% tax)`}
-                </div>
+
                 {settings.taxMode === 'uk' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px', fontSize: '11px', color: 'var(--text-secondary)', borderTop: '1px solid var(--border-color)', paddingTop: '6px' }}>
                     {(monthlyTax + monthlyNI === 0 && monthlyGross > 0 && !settings.ukIsSecondJob && !settings.ukBaseAnnualSalary) ? (
@@ -692,7 +769,8 @@ export default function App() {
                     )}
                   </div>
                 )}
-                <div className="progress-container">
+
+                <div className="progress-container" style={{ marginTop: '8px' }}>
                   <div 
                     className="progress-bar success" 
                     style={{ width: `${Math.min(100, (monthlyNet / settings.monthlyGoal) * 100)}%` }}
@@ -702,11 +780,52 @@ export default function App() {
                   <span>Goal Net: {formatCurrency(settings.monthlyGoal)}</span>
                   <span>{Math.round((monthlyNet / settings.monthlyGoal) * 100)}%</span>
                 </div>
+
+                {/* Weekly Breakdown Visual Chart Section */}
+                <div className="weekly-breakdown-section" style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--border-color)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                    <span>Weekly Breakdown & Shift Types</span>
+                    <div style={{ display: 'flex', gap: '12px', fontSize: '11px', fontWeight: 400 }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: '#10b981' }}></span> Day
+                      </span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: '#8b5cf6' }}></span> Night (Fixed)
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="weekly-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+                    {weeklyBreakdown.map((w, idx) => {
+                      const dayPct = w.totalGross > 0 ? (w.dayGross / maxWeeklyGross) * 100 : 0;
+                      const nightPct = w.totalGross > 0 ? (w.nightGross / maxWeeklyGross) * 100 : 0;
+                      return (
+                        <div key={idx} className="weekly-card-item" style={{ background: 'rgba(255, 255, 255, 0.03)', borderRadius: 'var(--radius-sm)', padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px', border: '1px solid var(--border-color)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: 600 }}>
+                            <span>{w.label}</span>
+                            <span style={{ color: w.totalGross > 0 ? 'var(--text-primary)' : 'var(--text-muted)' }}>{formatCurrency(w.net)}</span>
+                          </div>
+                          
+                          {/* Dual Stacked Bar */}
+                          <div style={{ height: '6px', background: 'rgba(255, 255, 255, 0.06)', borderRadius: '3px', overflow: 'hidden', display: 'flex', marginTop: '2px' }}>
+                            <div style={{ width: `${dayPct}%`, background: '#10b981', transition: 'width 0.3s' }} title={`Day: ${formatCurrency(w.dayGross)}`}></div>
+                            <div style={{ width: `${nightPct}%`, background: '#8b5cf6', transition: 'width 0.3s' }} title={`Night (Fixed): ${formatCurrency(w.nightGross)}`}></div>
+                          </div>
+
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                            <span>{w.hours.toFixed(1)} hrs</span>
+                            <span>{w.shiftsCount} shift{w.shiftsCount !== 1 ? 's' : ''}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
 
               <div className="kpi-card glass">
                 <div className="kpi-label">
-                  <svg fill="none" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
+                  <svg style={{ width: '16px', height: '16px', flexShrink: 0, stroke: 'currentColor' }} fill="none" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
                   Tax Year Net ({taxYearRange.label.replace('Tax Year ', '')})
                 </div>
                 <div className="kpi-value text-primary">{formatCurrency(yearlyNet)}</div>
@@ -725,7 +844,7 @@ export default function App() {
 
               <div className="kpi-card glass">
                 <div className="kpi-label">
-                  <svg fill="none" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 002 2h2a2 2 0 002-2z" /></svg>
+                  <svg style={{ width: '16px', height: '16px', flexShrink: 0, stroke: 'currentColor' }} fill="none" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 002 2h2a2 2 0 002-2z" /></svg>
                   Projected Net Est.
                 </div>
                 <div className="kpi-value text-warning">{formatCurrency(annualizedForecastNet)}</div>
