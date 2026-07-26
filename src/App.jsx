@@ -5,7 +5,7 @@ const INITIAL_SETTINGS = {
   defaultHourlyRate: 20,
   defaultNightShiftPay: 150,
   defaultBreakMinutes: 30,
-  taxMode: 'simple',
+  taxMode: 'uk',
   taxPercentage: 20,
   monthlyGoal: 3000,
   yearlyGoal: 36000,
@@ -983,15 +983,15 @@ export default function App() {
                 <label className="form-label">Tax Calculation Mode</label>
                 <select 
                   className="input-field" 
-                  value={settings.taxMode || 'simple'}
+                  value={settings.taxMode || 'uk'}
                   onChange={(e) => setSettings({ ...settings, taxMode: e.target.value })}
                 >
-                  <option value="simple">Simple Percentage</option>
                   <option value="uk">UK Income Tax & NI Bands</option>
+                  <option value="simple">Simple Percentage</option>
                 </select>
               </div>
 
-              {(!settings.taxMode || settings.taxMode === 'simple') ? (
+              {(settings.taxMode === 'simple') ? (
                 <div className="form-group">
                   <div className="settings-row">
                     <div className="settings-info">
