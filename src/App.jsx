@@ -8,7 +8,9 @@ const INITIAL_SETTINGS = {
   taxMode: 'simple',
   taxPercentage: 20,
   monthlyGoal: 3000,
-  yearlyGoal: 36000
+  yearlyGoal: 36000,
+  ukIsSecondJob: false,
+  ukBaseAnnualSalary: 0
 };
 
 // Initial Sample Data (for demonstration)
@@ -248,55 +250,93 @@ export default function App() {
     setShifts([...filtered, newShift]);
   };
 
-  // UK Tax & NI Calculator (Income Tax & Class 1 employee NI)
-  const calculateUKTaxAndNI = (annualGross) => {
-    if (annualGross <= 0) return { incomeTax: 0, ni: 0, totalTax: 0, net: 0, effectiveRate: 0 };
+  // HMRC Monthly & Annual UK Tax & NI Calculator
+  // Tax Year 2026/2027 Monthly thresholds:
+  // Personal Allowance: £12,570/yr -> £1,047.50/mo
+  // Basic Rate (20%): £1,047.50 to £4,189.17/mo (£50,270/yr)
+  // Higher Rate (40%): £4,189.17 to £10,428.33/mo (£125,140/yr)
+  // Additional Rate (45%): Above £10,428.33/mo
+  // Class 1 NI (Monthly): 0% up to £1,047.50; 8% from £1,047.50 to £4,189.17; 2% above £4,189.17
+  const calculateMonthlyUKTaxAndNI = (monthlyGross, overrideBaseSalary = null, overrideIsSecondJob = null) => {
+    if (monthlyGross <= 0) return { incomeTax: 0, ni: 0, totalTax: 0, net: 0, effectiveRate: 0 };
 
-    // 1. Personal Allowance calculation (tapered above £100,000)
-    let personalAllowance = 12570;
-    if (annualGross > 100000) {
-      const reduction = Math.max(0, (annualGross - 100000) / 2);
-      personalAllowance = Math.max(0, personalAllowance - reduction);
-    }
+    const isSecondJob = overrideIsSecondJob !== null ? overrideIsSecondJob : !!settings.ukIsSecondJob;
+    const baseAnnualSalary = overrideBaseSalary !== null ? overrideBaseSalary : (Number(settings.ukBaseAnnualSalary) || 0);
+    const monthlyBase = baseAnnualSalary / 12;
 
-    // 2. Income Tax (2026/2027 bands)
-    let taxableIncome = Math.max(0, annualGross - personalAllowance);
     let incomeTax = 0;
-
-    if (taxableIncome > 0) {
-      if (annualGross <= 50270) {
-        // Basic rate (20%)
-        incomeTax = taxableIncome * 0.20;
-      } else if (annualGross <= 125140) {
-        // Basic rate up to £50,270 total income, Higher rate (40%) above that
-        const basicRateIncome = Math.max(0, 50270 - personalAllowance);
-        const higherRateIncome = annualGross - 50270;
-        incomeTax = (basicRateIncome * 0.20) + (higherRateIncome * 0.40);
-      } else {
-        // Basic rate + Higher rate + Additional rate (45%)
-        const basicRateIncome = Math.max(0, 50270 - personalAllowance);
-        const higherRateIncome = 125140 - 50270;
-        const additionalRateIncome = annualGross - 125140;
-        incomeTax = (basicRateIncome * 0.20) + (higherRateIncome * 0.40) + (additionalRateIncome * 0.45);
-      }
-    }
-
-    // 3. National Insurance Class 1 (Employee)
-    // 0% up to £12,570; 8% on £12,570 to £50,270; 2% above £50,270
     let ni = 0;
-    if (annualGross > 12570) {
-      if (annualGross <= 50270) {
-        ni = (annualGross - 12570) * 0.08;
+
+    const computeStandardMonthlyTax = (gross) => {
+      let tax = 0;
+      const taxable = Math.max(0, gross - 1047.50);
+      if (taxable > 0) {
+        if (gross <= 4189.17) {
+          tax = taxable * 0.20;
+        } else if (gross <= 10428.33) {
+          const basic = 4189.17 - 1047.50;
+          const higher = gross - 4189.17;
+          tax = (basic * 0.20) + (higher * 0.40);
+        } else {
+          const basic = 4189.17 - 1047.50;
+          const higher = 10428.33 - 4189.17;
+          const additional = gross - 10428.33;
+          tax = (basic * 0.20) + (higher * 0.40) + (additional * 0.45);
+        }
+      }
+      return tax;
+    };
+
+    if (isSecondJob) {
+      // Tax Code BR (20% flat tax on shift earnings from £1)
+      const combinedMonthly = monthlyBase + monthlyGross;
+      if (combinedMonthly <= 4189.17) {
+        incomeTax = monthlyGross * 0.20;
       } else {
-        const basicNi = (50270 - 12570) * 0.08;
-        const higherNi = (annualGross - 50270) * 0.02;
-        ni = basicNi + higherNi;
+        const taxableAtBasic = Math.max(0, 4189.17 - monthlyBase);
+        const taxableAtHigher = monthlyGross - taxableAtBasic;
+        incomeTax = Math.max(0, taxableAtBasic) * 0.20 + Math.max(0, taxableAtHigher) * 0.40;
+      }
+
+      // Class 1 NI threshold per job (£1,047.50/mo)
+      if (monthlyGross > 1047.50) {
+        if (monthlyGross <= 4189.17) {
+          ni = (monthlyGross - 1047.50) * 0.08;
+        } else {
+          ni = ((4189.17 - 1047.50) * 0.08) + ((monthlyGross - 4189.17) * 0.02);
+        }
+      }
+    } else if (baseAnnualSalary > 0) {
+      // Marginal calculation on top of main job salary
+      const taxOnBase = computeStandardMonthlyTax(monthlyBase);
+      const taxOnTotal = computeStandardMonthlyTax(monthlyBase + monthlyGross);
+      incomeTax = Math.max(0, taxOnTotal - taxOnBase);
+
+      // Class 1 NI per job (£1,047.50/mo)
+      if (monthlyGross > 1047.50) {
+        if (monthlyGross <= 4189.17) {
+          ni = (monthlyGross - 1047.50) * 0.08;
+        } else {
+          ni = ((4189.17 - 1047.50) * 0.08) + ((monthlyGross - 4189.17) * 0.02);
+        }
+      }
+    } else {
+      // Primary job monthly PAYE calculation
+      incomeTax = computeStandardMonthlyTax(monthlyGross);
+
+      // Class 1 NI per job (£1,047.50/mo)
+      if (monthlyGross > 1047.50) {
+        if (monthlyGross <= 4189.17) {
+          ni = (monthlyGross - 1047.50) * 0.08;
+        } else {
+          ni = ((4189.17 - 1047.50) * 0.08) + ((monthlyGross - 4189.17) * 0.02);
+        }
       }
     }
 
     const totalTax = incomeTax + ni;
-    const net = annualGross - totalTax;
-    const effectiveRate = (totalTax / annualGross) * 100;
+    const net = monthlyGross - totalTax;
+    const effectiveRate = (totalTax / monthlyGross) * 100;
 
     return { incomeTax, ni, totalTax, net, effectiveRate };
   };
@@ -397,9 +437,8 @@ export default function App() {
       // Calculate net
       let net = gross * (1 - settings.taxPercentage / 100);
       if (settings.taxMode === 'uk') {
-        const annualGross = annualizedForecastGross || 1;
-        const taxRatio = (yearlyTax + yearlyNI) / annualGross;
-        net = gross * (1 - taxRatio);
+        const ukM = calculateMonthlyUKTaxAndNI(gross);
+        net = ukM.net;
       }
 
       return {
@@ -426,24 +465,56 @@ export default function App() {
   let annualizedForecastNI = 0;
 
   if (settings.taxMode === 'uk') {
-    // 1. Calculate actual UK Tax & NI on the projected annual gross
-    const ukAnnualized = calculateUKTaxAndNI(annualizedForecastGross);
-    effectiveTaxRate = ukAnnualized.effectiveRate;
-    annualizedForecastNet = ukAnnualized.net;
-    annualizedForecastTax = ukAnnualized.incomeTax;
-    annualizedForecastNI = ukAnnualized.ni;
+    // 1. Calculate actual UK Tax & NI on current selected month
+    const ukMonthly = calculateMonthlyUKTaxAndNI(monthlyGross);
+    effectiveTaxRate = ukMonthly.effectiveRate;
+    monthlyNet = ukMonthly.net;
+    monthlyTax = ukMonthly.incomeTax;
+    monthlyNI = ukMonthly.ni;
 
-    // 2. Calculate actual UK Tax & NI on the year-to-date gross (for yearlyNet)
-    const ukYearly = calculateUKTaxAndNI(yearlyGross);
-    yearlyNet = ukYearly.net;
-    yearlyTax = ukYearly.incomeTax;
-    yearlyNI = ukYearly.ni;
+    // 2. Sum monthly Tax & NI for all months in the tax year
+    let calcYearlyTax = 0;
+    let calcYearlyNI = 0;
+    let calcYearlyNet = 0;
 
-    // 3. For monthlyNet, apply the projected effective tax rate (or calculate UK Tax on monthly equivalent)
-    const annualGross = annualizedForecastGross || 1; // avoid division by zero
-    monthlyTax = monthlyGross * (ukAnnualized.incomeTax / annualGross);
-    monthlyNI = monthlyGross * (ukAnnualized.ni / annualGross);
-    monthlyNet = monthlyGross - (monthlyTax + monthlyNI);
+    const startYear = taxYearRange.start.getFullYear();
+    const taxYearMonths = [
+      { year: startYear, monthNum: 3 },
+      { year: startYear, monthNum: 4 },
+      { year: startYear, monthNum: 5 },
+      { year: startYear, monthNum: 6 },
+      { year: startYear, monthNum: 7 },
+      { year: startYear, monthNum: 8 },
+      { year: startYear, monthNum: 9 },
+      { year: startYear, monthNum: 10 },
+      { year: startYear, monthNum: 11 },
+      { year: startYear + 1, monthNum: 0 },
+      { year: startYear + 1, monthNum: 1 },
+      { year: startYear + 1, monthNum: 2 }
+    ];
+
+    taxYearMonths.forEach(m => {
+      const mShifts = shifts.filter(s => {
+        const sDate = new Date(s.date);
+        return sDate.getFullYear() === m.year && sDate.getMonth() === m.monthNum;
+      });
+      const mGross = mShifts.reduce((sum, s) => sum + calculateShiftPayout(s), 0);
+      const mUk = calculateMonthlyUKTaxAndNI(mGross);
+      calcYearlyTax += mUk.incomeTax;
+      calcYearlyNI += mUk.ni;
+      calcYearlyNet += mUk.net;
+    });
+
+    yearlyTax = calcYearlyTax;
+    yearlyNI = calcYearlyNI;
+    yearlyNet = calcYearlyNet;
+
+    // 3. For annualized forecast, compute tax on monthly equivalent
+    const monthlyForecastGross = annualizedForecastGross / 12;
+    const ukForecastMonthly = calculateMonthlyUKTaxAndNI(monthlyForecastGross);
+    annualizedForecastTax = ukForecastMonthly.incomeTax * 12;
+    annualizedForecastNI = ukForecastMonthly.ni * 12;
+    annualizedForecastNet = ukForecastMonthly.net * 12;
   }
 
   // Calendar Helpers
@@ -590,15 +661,23 @@ export default function App() {
                   Gross (Overall Pay): {formatCurrency(monthlyGross)} {settings.taxMode === 'uk' ? `(after ~${effectiveTaxRate.toFixed(1)}% est. UK tax & NI)` : `(after ${settings.taxPercentage}% tax)`}
                 </div>
                 {settings.taxMode === 'uk' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '6px', fontSize: '11px', color: 'var(--text-secondary)', borderTop: '1px solid var(--border-color)', paddingTop: '6px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>Est. Income Tax:</span>
-                      <span>-{formatCurrency(monthlyTax)}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>Est. National Insurance:</span>
-                      <span>-{formatCurrency(monthlyNI)}</span>
-                    </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px', fontSize: '11px', color: 'var(--text-secondary)', borderTop: '1px solid var(--border-color)', paddingTop: '6px' }}>
+                    {(monthlyTax + monthlyNI === 0 && monthlyGross > 0 && !settings.ukIsSecondJob && !settings.ukBaseAnnualSalary) ? (
+                      <div style={{ background: 'rgba(52, 211, 153, 0.1)', color: '#34d399', padding: '6px 8px', borderRadius: '4px', border: '1px solid rgba(52, 211, 153, 0.2)', fontSize: '11px', lineHeight: '1.3' }}>
+                        <strong>💡 £0 UK Tax:</strong> Monthly earnings are below HMRC's £1,047.50/mo allowance. Have another job? Enable <strong>Secondary Job</strong> in Settings.
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Est. Income Tax:</span>
+                          <span>-{formatCurrency(monthlyTax)}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Est. National Insurance:</span>
+                          <span>-{formatCurrency(monthlyNI)}</span>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
                 <div className="progress-container">
@@ -921,15 +1000,53 @@ export default function App() {
                   </div>
                 </div>
               ) : (
-                <div className="settings-section" style={{ background: 'rgba(255,255,255,0.02)', padding: '12px', border: '1px dashed var(--border-color)', margin: '0' }}>
-                  <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
-                    <strong>UK Tax System Enabled:</strong><br />
-                    • Personal Allowance: £12,570 (0% tax)<br />
-                    • Basic Rate (20%): £12,571 to £50,270<br />
-                    • Higher Rate (40%): £50,271 to £125,140<br />
-                    • Additional Rate (45%): Above £125,140<br />
-                    • Class 1 National Insurance: 8% on £12,570 - £50,270 and 2% above.
-                  </p>
+                <div className="settings-section" style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', margin: '0', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    🇬🇧 UK PAYE & National Insurance Configuration
+                  </div>
+
+                  {/* Toggle for Second Job / Tax Code BR */}
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', fontSize: '13px', color: 'var(--text-primary)' }}>
+                    <input 
+                      type="checkbox" 
+                      style={{ width: '18px', height: '18px', marginTop: '2px', accentColor: 'var(--primary-color)' }}
+                      checked={!!settings.ukIsSecondJob}
+                      onChange={(e) => setSettings({ ...settings, ukIsSecondJob: e.target.checked })}
+                    />
+                    <div>
+                      <span style={{ fontWeight: 600 }}>This is a secondary job / Tax Code BR</span>
+                      <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: '2px 0 0 0', lineHeight: '1.3' }}>
+                        Check this if your £12,570 Personal Allowance is used by your primary employer. Applies 20% flat Tax on shift earnings (Class 1 NI applies over £1,047.50/mo per employer).
+                      </p>
+                    </div>
+                  </label>
+
+                  {/* Input for Base Annual Salary if not second job */}
+                  {!settings.ukIsSecondJob && (
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
+                        Main Job Base Annual Salary (£) <span style={{ fontWeight: 400, color: 'var(--text-secondary)' }}>(Optional)</span>
+                      </label>
+                      <input 
+                        type="number" 
+                        className="input-field" 
+                        placeholder="e.g. 25000"
+                        value={settings.ukBaseAnnualSalary || ''}
+                        onChange={(e) => setSettings({ ...settings, ukBaseAnnualSalary: e.target.value ? Number(e.target.value) : 0 })}
+                      />
+                      <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px', lineHeight: '1.3' }}>
+                        Enter your primary annual income to calculate marginal UK tax & NI on top of your existing salary.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Active Tax Summary Card */}
+                  <div style={{ background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.2)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', fontSize: '11px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
+                    <strong style={{ color: 'var(--text-primary)' }}>HMRC Monthly Thresholds:</strong><br />
+                    • Monthly Personal Allowance: £1,047.50 / month (£12,570/yr)<br />
+                    • Basic Rate Tax (20%): £1,047.50 – £4,189.17 / month<br />
+                    • Class 1 NI (8%): Above £1,047.50 / month per job
+                  </div>
                 </div>
               )}
             </div>
