@@ -83,6 +83,18 @@ export default function App() {
     localStorage.setItem('shiftly_settings', JSON.stringify(settings));
   }, [settings]);
 
+  // Load Google AdSense script on main page mount
+  useEffect(() => {
+    const existingScript = document.querySelector('script[src*="adsbygoogle"]');
+    if (!existingScript) {
+      const script = document.createElement('script');
+      script.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7721292005812211';
+      script.async = true;
+      script.crossOrigin = 'anonymous';
+      document.head.appendChild(script);
+    }
+  }, []);
+
   // PWA states and logic
   const [isStandalone, setIsStandalone] = useState(() => {
     return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
