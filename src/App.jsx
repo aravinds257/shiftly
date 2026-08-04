@@ -909,22 +909,36 @@ export default function App() {
                   <span style={{ textAlign: 'right' }}>Gross</span>
                   <span style={{ textAlign: 'right' }}>Net Est.</span>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '250px', overflowY: 'auto', paddingRight: '4px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '280px', overflowY: 'auto', paddingRight: '4px' }}>
                   {getMonthlyBreakdown().map(m => (
                     <div 
                       key={`${m.name}-${m.year}`} 
                       className="settings-row" 
+                      onClick={() => {
+                        setCurrentDate(new Date(m.year, m.monthNum, 1));
+                        setCalendarViewMode('list');
+                        setActiveTab('calendar');
+                      }}
+                      title={`Click to view all shifts for ${m.name} ${m.year}`}
                       style={{ 
                         display: 'grid', 
                         gridTemplateColumns: '2fr 1fr 2fr 2fr', 
                         gap: '8px', 
                         fontSize: '13px', 
-                        padding: '6px 0', 
+                        padding: '8px 8px', 
+                        borderRadius: '6px',
                         borderBottom: '1px solid rgba(255,255,255,0.02)',
-                        alignItems: 'center'
+                        alignItems: 'center',
+                        cursor: 'pointer',
+                        transition: 'background 0.15s ease'
                       }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                     >
-                      <span style={{ fontWeight: '500' }}>{m.name} {m.year}</span>
+                      <span style={{ fontWeight: '500', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-primary)' }}>
+                        {m.name} {m.year}
+                        <span style={{ fontSize: '11px', color: 'var(--accent-color)' }}>→</span>
+                      </span>
                       <span style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>{m.shiftsCount}</span>
                       <span style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>{formatCurrency(m.gross)}</span>
                       <span style={{ textAlign: 'right', color: 'var(--color-success)', fontWeight: '600' }}>{formatCurrency(m.net)}</span>
