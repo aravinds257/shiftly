@@ -63,6 +63,7 @@ export default function App() {
   const [selectedDateStr, setSelectedDateStr] = useState(new Date().toISOString().split('T')[0]);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editingShift, setEditingShift] = useState(null);
+  const [calendarViewMode, setCalendarViewMode] = useState('grid'); // 'grid' | 'list'
 
   // Form Fields
   const [startTime, setStartTime] = useState('08:00');
@@ -978,74 +979,218 @@ export default function App() {
           </div>
         )}
 
-        {/* VIEW 2: CALENDAR */}
+        {/* VIEW 2: CALENDAR & MONTHLY LIST */}
         {activeTab === 'calendar' && (
           <div className="fade-in-slide" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             
-            {/* Custom Monthly Calendar Card */}
-            <div className="calendar-card glass">
-              <div className="calendar-header">
-                <button className="calendar-nav-btn" onClick={() => navigateMonth(-1)}>←</button>
-                <div className="calendar-title">{formatMonthName(currentDate)}</div>
-                <button className="calendar-nav-btn" onClick={() => navigateMonth(1)}>→</button>
-              </div>
-
-              <div className="calendar-weekdays">
-                <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
-              </div>
-
-              <div className="calendar-grid">
-                {buildCalendarCells()}
-              </div>
+            {/* View Mode Segment Switcher */}
+            <div className="view-switcher">
+              <button 
+                className={`view-switch-btn ${calendarViewMode === 'grid' ? 'active' : ''}`}
+                onClick={() => setCalendarViewMode('grid')}
+              >
+                📅 Calendar Grid
+              </button>
+              <button 
+                className={`view-switch-btn ${calendarViewMode === 'list' ? 'active' : ''}`}
+                onClick={() => setCalendarViewMode('list')}
+              >
+                📋 Monthly Shifts List
+              </button>
             </div>
 
-            {/* Quick Presets Section inside Calendar tab */}
-            <div>
-              <div className="section-title">
-                <span>Add Preset to Selected Day</span>
-              </div>
-              <div className="presets-container" style={{ paddingBottom: '0' }}>
-                <button className="btn btn-secondary" style={{ padding: '8px 12px', fontSize: '12px' }} onClick={() => applyPreset('Day')}>☀️ Day Shift</button>
-                <button className="btn btn-secondary" style={{ padding: '8px 12px', fontSize: '12px' }} onClick={() => applyPreset('Late')}>🌆 Late Shift</button>
-                <button className="btn btn-secondary" style={{ padding: '8px 12px', fontSize: '12px' }} onClick={() => applyPreset('Night')}>🌙 Night Shift</button>
-              </div>
-            </div>
+            {/* MODE 1: CALENDAR GRID */}
+            {calendarViewMode === 'grid' && (
+              <>
+                {/* Custom Monthly Calendar Card */}
+                <div className="calendar-card glass">
+                  <div className="calendar-header">
+                    <button className="calendar-nav-btn" onClick={() => navigateMonth(-1)}>←</button>
+                    <div className="calendar-title">{formatMonthName(currentDate)}</div>
+                    <button className="calendar-nav-btn" onClick={() => navigateMonth(1)}>→</button>
+                  </div>
 
-            {/* Shifts logged for the selected day */}
-            <div>
-              <h3 className="section-title" style={{ marginBottom: '12px' }}>
-                Shifts on {new Date(selectedDateStr).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}
-              </h3>
-              {selectedDateShifts.length === 0 ? (
-                <div className="empty-state">
-                  <p className="empty-state-text">No shifts logged for this day.</p>
-                  <button className="btn btn-secondary" style={{ padding: '8px 16px', fontSize: '13px' }} onClick={() => openAddShift(selectedDateStr)}>
-                    Create Custom Shift
-                  </button>
+                  <div className="calendar-weekdays">
+                    <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
+                  </div>
+
+                  <div className="calendar-grid">
+                    {buildCalendarCells()}
+                  </div>
                 </div>
-              ) : (
-                <div className="shifts-list-container">
-                  {selectedDateShifts.map(s => (
-                    <div key={s.id} className="shift-card glass" onClick={() => openEditShift(s)}>
-                      <div className="shift-details">
-                        <div className="shift-title-row">
-                          <span className="shift-time">{s.startTime} - {s.endTime}</span>
-                          <span className="shift-tag">{s.tag}</span>
-                        </div>
-                        <span className="shift-sub">
-                          <span>{calculateDurationHours(s.startTime, s.endTime, s.breakMinutes).toFixed(1)} hrs worked</span>
-                          <span>•</span>
-                          <span>Break: {s.breakMinutes}m</span>
-                        </span>
-                      </div>
-                      <div className="shift-payout-section">
-                        <span className="shift-pay">{formatCurrency(calculateShiftPayout(s))}</span>
-                      </div>
+
+                {/* Quick Presets Section inside Calendar tab */}
+                <div>
+                  <div className="section-title">
+                    <span>Add Preset to Selected Day</span>
+                  </div>
+                  <div className="presets-container" style={{ paddingBottom: '0' }}>
+                    <button className="btn btn-secondary" style={{ padding: '8px 12px', fontSize: '12px' }} onClick={() => applyPreset('Day')}>☀️ Day Shift</button>
+                    <button className="btn btn-secondary" style={{ padding: '8px 12px', fontSize: '12px' }} onClick={() => applyPreset('Late')}>🌆 Late Shift</button>
+                    <button className="btn btn-secondary" style={{ padding: '8px 12px', fontSize: '12px' }} onClick={() => applyPreset('Night')}>🌙 Night Shift</button>
+                  </div>
+                </div>
+
+                {/* Shifts logged for the selected day */}
+                <div>
+                  <h3 className="section-title" style={{ marginBottom: '12px' }}>
+                    Shifts on {new Date(selectedDateStr).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}
+                  </h3>
+                  {selectedDateShifts.length === 0 ? (
+                    <div className="empty-state">
+                      <p className="empty-state-text">No shifts logged for this day.</p>
+                      <button className="btn btn-secondary" style={{ padding: '8px 16px', fontSize: '13px' }} onClick={() => openAddShift(selectedDateStr)}>
+                        Create Custom Shift
+                      </button>
                     </div>
-                  ))}
+                  ) : (
+                    <div className="shifts-list-container">
+                      {selectedDateShifts.map(s => (
+                        <div key={s.id} className="shift-card glass" onClick={() => openEditShift(s)}>
+                          <div className="shift-details">
+                            <div className="shift-title-row">
+                              <span className="shift-time">{s.startTime} - {s.endTime}</span>
+                              <span className="shift-tag">{s.tag}</span>
+                            </div>
+                            <span className="shift-sub">
+                              <span>{calculateDurationHours(s.startTime, s.endTime, s.breakMinutes).toFixed(1)} hrs worked</span>
+                              <span>•</span>
+                              <span>Break: {s.breakMinutes}m</span>
+                            </span>
+                            {s.note && <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>"{s.note}"</span>}
+                          </div>
+                          <div className="shift-payout-section">
+                            <span className="shift-pay">{formatCurrency(calculateShiftPayout(s))}</span>
+                            <span className="shift-net-pay">Net: {formatCurrency(calculateShiftPayout(s) * (1 - effectiveTaxRate / 100))}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              </>
+            )}
+
+            {/* MODE 2: MONTHLY SHIFTS AGENDA / LIST */}
+            {calendarViewMode === 'list' && (
+              <>
+                {/* Month Navigation Card */}
+                <div className="calendar-card glass" style={{ padding: '16px 20px' }}>
+                  <div className="calendar-header" style={{ marginBottom: 0 }}>
+                    <button className="calendar-nav-btn" onClick={() => navigateMonth(-1)}>←</button>
+                    <div className="calendar-title">{formatMonthName(currentDate)}</div>
+                    <button className="calendar-nav-btn" onClick={() => navigateMonth(1)}>→</button>
+                  </div>
+                </div>
+
+                {(() => {
+                  const currentYear = currentDate.getFullYear();
+                  const currentMonth = currentDate.getMonth();
+                  const monthShifts = shifts.filter(s => {
+                    const sDate = new Date(s.date + 'T00:00:00');
+                    return sDate.getFullYear() === currentYear && sDate.getMonth() === currentMonth;
+                  }).sort((a, b) => new Date(a.date) - new Date(b.date));
+
+                  const totalGross = monthShifts.reduce((sum, s) => sum + calculateShiftPayout(s), 0);
+                  const totalHours = monthShifts.reduce((sum, s) => sum + calculateDurationHours(s.startTime, s.endTime, s.breakMinutes), 0);
+                  const uniqueDays = new Set(monthShifts.map(s => s.date)).size;
+
+                  let estNet = totalGross * (1 - settings.taxPercentage / 100);
+                  if (settings.taxMode === 'uk') {
+                    estNet = calculateMonthlyUKTaxAndNI(totalGross).net;
+                  }
+
+                  return (
+                    <>
+                      {/* Monthly Summary Banner */}
+                      <div className="monthly-summary-card glass">
+                        <div className="monthly-summary-stat">
+                          <span className="monthly-summary-label">Shifts Logged</span>
+                          <span className="monthly-summary-value text-accent">{monthShifts.length} shifts</span>
+                        </div>
+                        <div className="monthly-summary-stat">
+                          <span className="monthly-summary-label">Days Worked</span>
+                          <span className="monthly-summary-value">{uniqueDays} days</span>
+                        </div>
+                        <div className="monthly-summary-stat">
+                          <span className="monthly-summary-label">Hours Worked</span>
+                          <span className="monthly-summary-value">{totalHours.toFixed(1)} hrs</span>
+                        </div>
+                        <div className="monthly-summary-stat">
+                          <span className="monthly-summary-label">Est. Net Pay</span>
+                          <span className="monthly-summary-value text-success">{formatCurrency(estNet)}</span>
+                        </div>
+                      </div>
+
+                      {/* Monthly Agenda Shift List */}
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                          <h3 className="section-title" style={{ margin: 0 }}>
+                            All Shifts in {formatMonthName(currentDate)}
+                          </h3>
+                          <button 
+                            className="btn btn-secondary" 
+                            style={{ padding: '6px 12px', fontSize: '12px' }} 
+                            onClick={() => openAddShift(`${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-01`)}
+                          >
+                            + Add Shift
+                          </button>
+                        </div>
+
+                        {monthShifts.length === 0 ? (
+                          <div className="empty-state glass">
+                            <svg fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+                            </svg>
+                            <p className="empty-state-text">No shifts recorded for {formatMonthName(currentDate)}.</p>
+                            <button className="btn btn-secondary" style={{ padding: '8px 16px', fontSize: '13px' }} onClick={() => openAddShift(`${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-01`)}>
+                              Log Shift for this Month
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="shifts-list-container" style={{ gap: '10px' }}>
+                            {monthShifts.map(s => {
+                              const sDate = new Date(s.date + 'T00:00:00');
+                              const dateFormatted = sDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+                              const durHours = calculateDurationHours(s.startTime, s.endTime, s.breakMinutes);
+                              const grossPay = calculateShiftPayout(s);
+                              let shiftNet = grossPay * (1 - effectiveTaxRate / 100);
+                              if (settings.taxMode === 'uk') {
+                                shiftNet = calculateMonthlyUKTaxAndNI(grossPay).net;
+                              }
+
+                              return (
+                                <div key={s.id} className="shift-card glass" onClick={() => openEditShift(s)} style={{ cursor: 'pointer' }}>
+                                  <div className="shift-details">
+                                    <div className="shift-date-header">
+                                      <span>📅 {dateFormatted}</span>
+                                    </div>
+                                    <div className="shift-title-row" style={{ marginTop: '2px' }}>
+                                      <span className="shift-time">{s.startTime} - {s.endTime}</span>
+                                      <span className="shift-tag">{s.tag}</span>
+                                    </div>
+                                    <span className="shift-sub">
+                                      <span>{durHours.toFixed(1)} hrs worked</span>
+                                      <span>•</span>
+                                      <span>Break: {s.breakMinutes}m</span>
+                                    </span>
+                                    {s.note && <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>"{s.note}"</span>}
+                                  </div>
+                                  <div className="shift-payout-section">
+                                    <span className="shift-pay">{formatCurrency(grossPay)}</span>
+                                    <span className="shift-net-pay">Net: {formatCurrency(shiftNet)}</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
+              </>
+            )}
 
           </div>
         )}
