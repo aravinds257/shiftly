@@ -1,0 +1,30 @@
+{
+  "name": "Shiftly - Personal Shift Tracker",
+  "short_name": "Shiftly",
+  "description": "Track your daily shifts, view calendars, and forecast monthly and yearly earnings with Shiftly.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0a0b16",
+  "theme_color": "#6366f1",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    },
+    {
+      "src": "favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192",
+      "purpose": "maskable"
+    },
+    {
+      "src": "favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    }
+  ]
+}
