@@ -63,7 +63,6 @@ export default function App() {
   const [selectedDateStr, setSelectedDateStr] = useState(new Date().toISOString().split('T')[0]);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editingShift, setEditingShift] = useState(null);
-  const [expandedMonths, setExpandedMonths] = useState({});
 
   // Form Fields
   const [startTime, setStartTime] = useState('08:00');
@@ -445,35 +444,8 @@ export default function App() {
         return sDate.getFullYear() === m.year && sDate.getMonth() === m.monthNum;
       });
 
-      // Sort shifts chronologically
-      monthShifts.sort((a, b) => new Date(a.date) - new Date(b.date));
-
       const gross = monthShifts.reduce((sum, s) => sum + calculateShiftPayout(s), 0);
-      const totalHours = monthShifts.reduce((sum, s) => sum + calculateDurationHours(s.startTime, s.endTime, s.breakMinutes), 0);
       
-      // Calculate distinct calendar days worked
-      const uniqueDays = new Set(monthShifts.map(s => s.date)).size;
-
-      // Group shifts by date for detailed day breakdown
-      const dayMap = {};
-      monthShifts.forEach(s => {
-        if (!dayMap[s.date]) {
-          dayMap[s.date] = {
-            date: s.date,
-            shifts: [],
-            totalHours: 0,
-            gross: 0
-          };
-        }
-        const shiftHours = calculateDurationHours(s.startTime, s.endTime, s.breakMinutes);
-        const shiftPayout = calculateShiftPayout(s);
-        dayMap[s.date].shifts.push(s);
-        dayMap[s.date].totalHours += shiftHours;
-        dayMap[s.date].gross += shiftPayout;
-      });
-
-      const daysList = Object.values(dayMap).sort((a, b) => new Date(a.date) - new Date(b.date));
-
       // Calculate net
       let net = gross * (1 - settings.taxPercentage / 100);
       if (settings.taxMode === 'uk') {
@@ -483,13 +455,9 @@ export default function App() {
 
       return {
         ...m,
-        key: `${m.name}-${m.year}`,
         shiftsCount: monthShifts.length,
-        daysCount: uniqueDays,
-        totalHours,
         gross,
-        net,
-        daysList
+        net
       };
     });
   };
@@ -723,6 +691,8 @@ export default function App() {
 
   // Selected date's shifts
   const selectedDateShifts = shifts.filter(s => s.date === selectedDateStr);
+  const todayStr = new Date().toISOString().split('T')[0];
+  const todayShifts = shifts.filter(s => s.date === todayStr);
 
   return (
     <>
@@ -932,144 +902,56 @@ export default function App() {
                 <span>Monthly Earnings ({taxYearRange.label})</span>
               </div>
               <div className="settings-section" style={{ padding: '16px', gap: '12px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1fr 1.5fr 1.5fr', gap: '6px', fontSize: '11px', color: 'var(--text-secondary)', fontWeight: '600', paddingBottom: '6px', borderBottom: '1px solid var(--border-color)', alignItems: 'center' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 2fr 2fr', gap: '8px', fontSize: '12px', color: 'var(--text-secondary)', fontWeight: '600', paddingBottom: '6px', borderBottom: '1px solid var(--border-color)' }}>
                   <span>Month</span>
-                  <span style={{ textAlign: 'center' }}>Days</span>
-                  <span style={{ textAlign: 'center' }}>Hours</span>
                   <span style={{ textAlign: 'center' }}>Shifts</span>
                   <span style={{ textAlign: 'right' }}>Gross</span>
                   <span style={{ textAlign: 'right' }}>Net Est.</span>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '360px', overflowY: 'auto', paddingRight: '4px' }}>
-                  {getMonthlyBreakdown().map(m => {
-                    const isExpanded = !!expandedMonths[m.key];
-                    const hasData = m.shiftsCount > 0;
-                    return (
-                      <div 
-                        key={m.key} 
-                        style={{ 
-                          display: 'flex', 
-                          flexDirection: 'column', 
-                          borderRadius: '8px', 
-                          background: isExpanded ? 'rgba(255, 255, 255, 0.03)' : 'transparent', 
-                          transition: 'all 0.2s ease', 
-                          border: isExpanded ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid transparent',
-                          overflow: 'hidden'
-                        }}
-                      >
-                        <div 
-                          className="settings-row" 
-                          onClick={() => hasData && setExpandedMonths(prev => ({ ...prev, [m.key]: !prev[m.key] }))}
-                          title={hasData ? (isExpanded ? "Click to collapse details" : "Click to view daily breakdown") : "No shifts recorded"}
-                          style={{ 
-                            display: 'grid', 
-                            gridTemplateColumns: '1.5fr 1fr 1fr 1fr 1.5fr 1.5fr', 
-                            gap: '6px', 
-                            fontSize: '13px', 
-                            padding: '8px 6px', 
-                            borderBottom: isExpanded ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(255,255,255,0.02)',
-                            alignItems: 'center',
-                            cursor: hasData ? 'pointer' : 'default',
-                            userSelect: 'none'
-                          }}
-                        >
-                          <span style={{ fontWeight: '500', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            {hasData ? (
-                              <span style={{ fontSize: '9px', color: 'var(--accent-color)', display: 'inline-block', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease' }}>
-                                ▶
-                              </span>
-                            ) : (
-                              <span style={{ width: '9px', display: 'inline-block' }}></span>
-                            )}
-                            {m.name} {m.year}
-                          </span>
-                          <span style={{ textAlign: 'center', color: hasData ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: hasData ? '600' : '400' }}>
-                            {m.daysCount > 0 ? `${m.daysCount}d` : '-'}
-                          </span>
-                          <span style={{ textAlign: 'center', color: hasData ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
-                            {m.totalHours > 0 ? `${m.totalHours.toFixed(1)}h` : '-'}
-                          </span>
-                          <span style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>{m.shiftsCount}</span>
-                          <span style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>{formatCurrency(m.gross)}</span>
-                          <span style={{ textAlign: 'right', color: 'var(--color-success)', fontWeight: '600' }}>{formatCurrency(m.net)}</span>
-                        </div>
-
-                        {/* Expanded Day-by-Day Breakdown */}
-                        {isExpanded && hasData && (
-                          <div style={{ padding: '8px 10px 10px 10px', background: 'rgba(0, 0, 0, 0.2)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                            <div style={{ fontSize: '11px', color: 'var(--accent-color)', fontWeight: '600', marginBottom: '2px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span>Daily Breakdown ({m.daysCount} days worked):</span>
-                              <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 'normal' }}>Click day to select</span>
-                            </div>
-                            {m.daysList.map(d => {
-                              const dDate = new Date(d.date + 'T00:00:00');
-                              const dayStr = dDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-                              return (
-                                <div 
-                                  key={d.date} 
-                                  onClick={() => {
-                                    setSelectedDateStr(d.date);
-                                    setCurrentDate(new Date(d.date + 'T00:00:00'));
-                                  }}
-                                  style={{ 
-                                    display: 'flex', 
-                                    justifyContent: 'space-between', 
-                                    alignItems: 'center', 
-                                    padding: '6px 10px', 
-                                    background: 'rgba(255, 255, 255, 0.04)', 
-                                    borderRadius: '6px',
-                                    fontSize: '12px',
-                                    cursor: 'pointer',
-                                    transition: 'background 0.15s ease'
-                                  }}
-                                  onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'}
-                                  onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)'}
-                                >
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                    <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{dayStr}</span>
-                                    <div style={{ display: 'flex', gap: '6px', fontSize: '11px', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
-                                      {d.shifts.map((s, idx) => (
-                                        <span key={s.id || idx}>
-                                          ⏱️ {s.startTime}-{s.endTime} {s.tag ? `• ${s.tag}` : ''}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  </div>
-                                  <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
-                                    <span style={{ fontWeight: '600', color: 'var(--accent-color)' }}>{d.totalHours.toFixed(1)} hrs</span>
-                                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{formatCurrency(d.gross)}</span>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '250px', overflowY: 'auto', paddingRight: '4px' }}>
+                  {getMonthlyBreakdown().map(m => (
+                    <div 
+                      key={`${m.name}-${m.year}`} 
+                      className="settings-row" 
+                      style={{ 
+                        display: 'grid', 
+                        gridTemplateColumns: '2fr 1fr 2fr 2fr', 
+                        gap: '8px', 
+                        fontSize: '13px', 
+                        padding: '6px 0', 
+                        borderBottom: '1px solid rgba(255,255,255,0.02)',
+                        alignItems: 'center'
+                      }}
+                    >
+                      <span style={{ fontWeight: '500' }}>{m.name} {m.year}</span>
+                      <span style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>{m.shiftsCount}</span>
+                      <span style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>{formatCurrency(m.gross)}</span>
+                      <span style={{ textAlign: 'right', color: 'var(--color-success)', fontWeight: '600' }}>{formatCurrency(m.net)}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
 
-            {/* Selected Date Shifts */}
+            {/* Today's Shifts */}
             <div>
               <h3 className="section-title" style={{ marginBottom: '12px' }}>
-                Shifts on {new Date(selectedDateStr).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}
+                Today's Shifts ({new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })})
               </h3>
               
-              {selectedDateShifts.length === 0 ? (
+              {todayShifts.length === 0 ? (
                 <div className="empty-state">
                   <svg fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
                   </svg>
-                  <p className="empty-state-text">No shifts logged for this day.</p>
-                  <button className="btn btn-secondary" style={{ padding: '8px 16px', fontSize: '13px' }} onClick={() => openAddShift(selectedDateStr)}>
+                  <p className="empty-state-text">No shifts logged for today.</p>
+                  <button className="btn btn-secondary" style={{ padding: '8px 16px', fontSize: '13px' }} onClick={() => openAddShift(todayStr)}>
                     Add Shift Manual
                   </button>
                 </div>
               ) : (
                 <div className="shifts-list-container">
-                  {selectedDateShifts.map(s => (
+                  {todayShifts.map(s => (
                     <div key={s.id} className="shift-card glass" onClick={() => openEditShift(s)}>
                       <div className="shift-details">
                         <div className="shift-title-row">
