@@ -5,10 +5,14 @@ const INITIAL_SETTINGS = {
   defaultHourlyRate: 20,
   defaultNightShiftPay: 150,
   defaultBreakMinutes: 30,
-  taxMode: 'uk',
+  taxMode: 'simple',
   taxPercentage: 20,
   monthlyGoal: 3000,
   yearlyGoal: 36000,
+  timesheetCompany: 'none',
+  employeeName: '',
+  contractedHours: '',
+  timesheetPeriod: '',
   ukIsSecondJob: false,
   ukBaseAnnualSalary: 0
 };
@@ -352,6 +356,129 @@ export default function App() {
     const effectiveRate = (totalTax / monthlyGross) * 100;
 
     return { incomeTax, ni, totalTax, net, effectiveRate };
+  };
+
+  const exportTimesheetForMonth = async (year, month) => {
+    try {
+      if (!window.ExcelJS) {
+        alert('Timesheet engine (ExcelJS) is still loading. Please try again in a moment.');
+        return;
+      }
+
+      const response = await fetch(import.meta.env.BASE_URL + 'caretech_template.xlsx');
+      if (!response.ok) {
+        throw new Error('Failed to download Caretech timesheet template. Make sure caretech_template.xlsx exists in public directory.');
+      }
+      const arrayBuffer = await response.arrayBuffer();
+
+      const workbook = new window.ExcelJS.Workbook();
+      await workbook.xlsx.load(arrayBuffer);
+      const worksheet = workbook.getWorksheet('Sheet1');
+
+      if (!worksheet) {
+        throw new Error('Template sheet "Sheet1" not found in the template workbook.');
+      }
+
+      // Pre-fill header cells
+      worksheet.getCell('F1').value = settings.employeeName || '';
+      worksheet.getCell('F2').value = settings.timesheetPeriod || '';
+      worksheet.getCell('F4').value = settings.contractedHours ? Number(settings.contractedHours) : '';
+      
+      const monthDate = new Date(year, month, 1);
+      worksheet.getCell('M2').value = monthDate.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+
+      // Get shifts for this specific month
+      const monthShifts = shifts.filter(s => {
+        const sDate = new Date(s.date);
+        return sDate.getFullYear() === year && sDate.getMonth() === month;
+      });
+
+      // Clear existing values in the rows first (D12:H42, K12:M42) to avoid stray data
+      for (let d = 1; d <= 31; d++) {
+        const rowNum = 11 + d;
+        worksheet.getCell(`D${rowNum}`).value = null;
+        worksheet.getCell(`E${rowNum}`).value = null;
+        worksheet.getCell(`F${rowNum}`).value = null;
+        worksheet.getCell(`G${rowNum}`).value = null;
+        worksheet.getCell(`H${rowNum}`).value = null;
+        worksheet.getCell(`K${rowNum}`).value = null;
+        worksheet.getCell(`L${rowNum}`).value = null;
+        worksheet.getCell(`M${rowNum}`).value = null;
+      }
+
+      // Fill in shifts by day of month
+      for (let d = 1; d <= 31; d++) {
+        const dayShifts = monthShifts.filter(s => {
+          const sDate = new Date(s.date);
+          return sDate.getDate() === d;
+        });
+
+        if (dayShifts.length > 0) {
+          let directCareHours = 0;
+          let annualLeave = 0;
+          let training = 0;
+          let sickness = 0;
+          let otherAbsence = 0;
+          let sleepIns = 0;
+          let onCall = 0;
+          const notes = [];
+
+          dayShifts.forEach(s => {
+            const duration = calculateDurationHours(s.startTime, s.endTime, Number(s.breakMinutes));
+            const tagLower = (s.tag || '').toLowerCase();
+            const notesLower = (s.note || '').toLowerCase();
+
+            if (tagLower.includes('sleep') || notesLower.includes('sleep-in') || notesLower.includes('sleepin')) {
+              sleepIns += 1;
+            } else if (tagLower.includes('annual') || tagLower === 'al' || tagLower.includes('leave') || tagLower.includes('holiday')) {
+              annualLeave += duration;
+            } else if (tagLower.includes('training') || tagLower.includes('course') || tagLower.includes('study')) {
+              training += duration;
+            } else if (tagLower.includes('sick') || tagLower.includes('ill') || tagLower === 'sickness') {
+              sickness += duration;
+            } else if (tagLower.includes('absent') || tagLower.includes('absence') || tagLower.includes('awol')) {
+              otherAbsence += duration;
+            } else if (tagLower.includes('call') || tagLower.includes('oncall') || tagLower.includes('on-call')) {
+              onCall += duration;
+            } else {
+              directCareHours += duration;
+            }
+
+            if (s.note) {
+              notes.push(s.note);
+            }
+          });
+
+          const rowNum = 11 + d;
+          if (directCareHours > 0) worksheet.getCell(`D${rowNum}`).value = Number(directCareHours.toFixed(2));
+          if (annualLeave > 0) worksheet.getCell(`E${rowNum}`).value = Number(annualLeave.toFixed(2));
+          if (training > 0) worksheet.getCell(`F${rowNum}`).value = Number(training.toFixed(2));
+          if (sickness > 0) worksheet.getCell(`G${rowNum}`).value = Number(sickness.toFixed(2));
+          if (otherAbsence > 0) worksheet.getCell(`H${rowNum}`).value = Number(otherAbsence.toFixed(2));
+          if (sleepIns > 0) worksheet.getCell(`K${rowNum}`).value = Number(sleepIns);
+          if (onCall > 0) worksheet.getCell(`L${rowNum}`).value = Number(onCall.toFixed(2));
+          if (notes.length > 0) worksheet.getCell(`M${rowNum}`).value = notes.join(', ');
+        }
+      }
+
+      // Write workbook to buffer
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      
+      const monthName = monthDate.toLocaleDateString('en-US', { month: 'long' });
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Caretech_Timesheet_${monthName}_${year}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Error generating Caretech timesheet:', error);
+      alert('Error generating timesheet: ' + error.message);
+    }
   };
 
   // Financial Projections
@@ -903,11 +1030,12 @@ export default function App() {
                 <span>Monthly Earnings ({taxYearRange.label})</span>
               </div>
               <div className="settings-section" style={{ padding: '16px', gap: '12px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 2fr 2fr', gap: '8px', fontSize: '12px', color: 'var(--text-secondary)', fontWeight: '600', paddingBottom: '6px', borderBottom: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: settings.timesheetCompany === 'caretech' ? '2fr 1fr 2fr 2fr 1.2fr' : '2fr 1fr 2fr 2fr', gap: '8px', fontSize: '12px', color: 'var(--text-secondary)', fontWeight: '600', paddingBottom: '6px', borderBottom: '1px solid var(--border-color)' }}>
                   <span>Month</span>
                   <span style={{ textAlign: 'center' }}>Shifts</span>
                   <span style={{ textAlign: 'right' }}>Gross</span>
                   <span style={{ textAlign: 'right' }}>Net Est.</span>
+                  {settings.timesheetCompany === 'caretech' && <span style={{ textAlign: 'center' }}>Timesheet</span>}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '280px', overflowY: 'auto', paddingRight: '4px' }}>
                   {getMonthlyBreakdown().map(m => (
@@ -922,7 +1050,7 @@ export default function App() {
                       title={`Click to view all shifts for ${m.name} ${m.year}`}
                       style={{ 
                         display: 'grid', 
-                        gridTemplateColumns: '2fr 1fr 2fr 2fr', 
+                        gridTemplateColumns: settings.timesheetCompany === 'caretech' ? '2fr 1fr 2fr 2fr 1.2fr' : '2fr 1fr 2fr 2fr', 
                         gap: '8px', 
                         fontSize: '13px', 
                         padding: '8px 8px', 
@@ -942,6 +1070,39 @@ export default function App() {
                       <span style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>{m.shiftsCount}</span>
                       <span style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>{formatCurrency(m.gross)}</span>
                       <span style={{ textAlign: 'right', color: 'var(--color-success)', fontWeight: '600' }}>{formatCurrency(m.net)}</span>
+                      {settings.timesheetCompany === 'caretech' && (
+                        <button
+                          className="btn btn-secondary"
+                          title={`Export Caretech Timesheet for ${m.name} ${m.year}`}
+                          onClick={(e) => {
+                            e.stopPropagation(); // prevent navigation to calendar
+                            exportTimesheetForMonth(m.year, m.monthNum);
+                          }}
+                          style={{
+                            padding: '4px 8px',
+                            fontSize: '11px',
+                            borderRadius: '4px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '4px',
+                            margin: '0 auto',
+                            background: 'rgba(99, 102, 241, 0.15)',
+                            color: 'var(--accent-color)',
+                            border: '1px solid rgba(99, 102, 241, 0.3)'
+                          }}
+                          onMouseEnter={(btn) => {
+                            btn.currentTarget.style.background = 'var(--primary-color)';
+                            btn.currentTarget.style.color = '#fff';
+                          }}
+                          onMouseLeave={(btn) => {
+                            btn.currentTarget.style.background = 'rgba(99, 102, 241, 0.15)';
+                            btn.currentTarget.style.color = 'var(--accent-color)';
+                          }}
+                        >
+                          📥 Export
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1012,6 +1173,17 @@ export default function App() {
                 📋 Monthly Shifts List
               </button>
             </div>
+
+            {/* Caretech Timesheet Export Button */}
+            {settings.timesheetCompany === 'caretech' && (
+              <button 
+                className="btn btn-primary" 
+                onClick={() => exportTimesheetForMonth(currentDate.getFullYear(), currentDate.getMonth())}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '14px', borderRadius: 'var(--radius-md)', fontWeight: '600' }}
+              >
+                📥 Export Caretech Timesheet for {formatMonthName(currentDate)}
+              </button>
+            )}
 
             {/* MODE 1: CALENDAR GRID */}
             {calendarViewMode === 'grid' && (
@@ -1338,6 +1510,64 @@ export default function App() {
                     • Monthly Personal Allowance: £1,047.50 / month (£12,570/yr)<br />
                     • Basic Rate Tax (20%): £1,047.50 – £4,189.17 / month<br />
                     • Class 1 NI (8%): Above £1,047.50 / month per job
+                  </div>
+                </div>
+              )}
+
+              {/* Company Timesheet Integration */}
+              <div className="form-group" style={{ marginTop: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
+                <label className="form-label" style={{ fontWeight: 600 }}>Company Timesheet Integration</label>
+                <select 
+                  className="input-field" 
+                  value={settings.timesheetCompany || 'none'}
+                  onChange={(e) => setSettings({ ...settings, timesheetCompany: e.target.value })}
+                >
+                  <option value="none">None</option>
+                  <option value="caretech">Caretech Company</option>
+                </select>
+              </div>
+
+              {settings.timesheetCompany === 'caretech' && (
+                <div className="settings-section" style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-md)', margin: '0', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    📋 Caretech Timesheet Configuration
+                  </div>
+                  <p style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: '1.4', margin: 0 }}>
+                    These personal details will be pre-filled automatically into the official Excel timesheet template.
+                  </p>
+                  
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label">Full Name</label>
+                    <input 
+                      type="text" 
+                      className="input-field" 
+                      placeholder="e.g. John Smith"
+                      value={settings.employeeName || ''}
+                      onChange={(e) => setSettings({ ...settings, employeeName: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label className="form-label">Contracted Hours</label>
+                      <input 
+                        type="number" 
+                        className="input-field" 
+                        placeholder="e.g. 37.5"
+                        value={settings.contractedHours || ''}
+                        onChange={(e) => setSettings({ ...settings, contractedHours: e.target.value })}
+                      />
+                    </div>
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label className="form-label">Period / Reference</label>
+                      <input 
+                        type="text" 
+                        className="input-field" 
+                        placeholder="e.g. Period 5"
+                        value={settings.timesheetPeriod || ''}
+                        onChange={(e) => setSettings({ ...settings, timesheetPeriod: e.target.value })}
+                      />
+                    </div>
                   </div>
                 </div>
               )}
