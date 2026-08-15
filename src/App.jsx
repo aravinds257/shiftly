@@ -9,7 +9,7 @@ const INITIAL_SETTINGS = {
   taxPercentage: 20,
   monthlyGoal: 3000,
   yearlyGoal: 36000,
-  timesheetCompany: 'none',
+  timesheetCompany: 'caretech',
   employeeName: '',
   contractedHours: '',
   timesheetPeriod: '',
@@ -57,7 +57,15 @@ export default function App() {
 
   const [settings, setSettings] = useState(() => {
     const local = localStorage.getItem('shiftly_settings');
-    return local ? JSON.parse(local) : INITIAL_SETTINGS;
+    if (local) {
+      const parsed = JSON.parse(local);
+      const merged = { ...INITIAL_SETTINGS, ...parsed };
+      if (merged.timesheetCompany === 'none' || !merged.timesheetCompany) {
+        merged.timesheetCompany = 'caretech';
+      }
+      return merged;
+    }
+    return INITIAL_SETTINGS;
   });
 
   const currencySymbol = settings.taxMode === 'uk' ? '£' : '$';
